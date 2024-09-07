@@ -183,7 +183,11 @@ void BackendModule::save(const LogSetup& log_setup) {
   const auto backend_path = log_setup.getLogDir("backend");
   const auto pgmo_path = log_setup.getLogDir("backend/pgmo");
   private_dsg_->graph->save(backend_path + "/dsg.json", false);
+  VLOG(2) << "[Hydra Backend] saved base dynamic scene graph to " << backend_path + "/dsg.json";
   private_dsg_->graph->save(backend_path + "/dsg_with_mesh.json");
+  VLOG(2) << "[Hydra Backend] saving base dynamic scene graph with mesh to " << backend_path + "/dsg_with_mesh.json";
+  private_dsg_->graph->saveFiltered(backend_path + "/filtered_dsg.json", false);
+  VLOG(2) << "[Hydra Backend] saving filtered dynamic scene graph to " << backend_path + "/filtered_dsg.json";
   savePoseGraphSparseMapping(pgmo_path + "/sparsification_mapping.txt");
 
   const auto& prefix = GlobalInfo::instance().getRobotPrefix();

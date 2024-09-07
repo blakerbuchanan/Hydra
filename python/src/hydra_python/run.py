@@ -49,7 +49,7 @@ def _take_step(pipeline, data, pose, segmenter, image_viz):
 
     pipeline.step(timestamp, world_t_body, q_wxyz, data.depth, labels, data.rgb)
 
-
+import imageio
 def run(
     pipeline,
     data,
@@ -63,6 +63,9 @@ def run(
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
 
+    imgs = []
+    imgs_rgb = []
+
     if show_progress:
         with click.progressbar(pose_source) as bar:
             for pose in bar:
@@ -72,5 +75,9 @@ def run(
     else:
         for pose in pose_source:
             _take_step(pipeline, data, pose, segmenter, image_viz)
+            imgs.append(data.colormap(data.labels))
+            imgs_rgb.append(data.rgb)
             if step_callback:
                 step_callback(pipeline, visualizer)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_semantic.gif', imgs)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_rgb.gif', imgs_rgb)

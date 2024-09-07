@@ -20,6 +20,10 @@ def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
             )
             poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed)
     else:
+        click.secho(
+                "Finding random trajectory",
+                fg="yellow",
+            )
         poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed)
 
     click.secho(f"Trajectory is {poses.get_path_length()} meters long", fg="green")
@@ -34,6 +38,7 @@ def cli():
 
 @cli.command(name="run")
 @click.argument("scene_path", type=click.Path(exists=True))
+@click.argument("scene_type", type=str, default='mp3d')
 @click.option("-o", "--output-path", default=None)
 @click.option("-l", "--label-space", default="ade20k_mp3d")
 @click.option("-p", "--prev-dsg", default=None, help="dsg containing trajectory")
@@ -49,6 +54,7 @@ def cli():
 @click.option("--config-verbosity", default=0, help="glog verbosity to print configs")
 def run(
     scene_path,
+    scene_type,
     output_path,
     label_space,
     prev_dsg,
@@ -68,7 +74,7 @@ def run(
 
     hydra.set_glog_level(glog_level, verbosity)
     output_path = hydra.resolve_output_path(output_path, force=force)
-    data = habitat.HabitatInterface(scene_path)
+    data = habitat.HabitatInterface(scene_path, scene_type=scene_type)
     poses = _get_trajectory(data, prev_dsg, seed, use_full_scene=use_full_scene)
 
     configs = hydra.load_configs("habitat", labelspace_name=label_space)

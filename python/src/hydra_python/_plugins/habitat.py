@@ -85,10 +85,16 @@ def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, z_offset=0.0):
     return spec
 
 
-def _make_habitat_config(scene, z_offset=0.0, agent_radius=0.1):
+def _make_habitat_config(scene, scene_type='mp3d', z_offset=0.0, agent_radius=0.1):
     sim_cfg = habitat_sim.SimulatorConfiguration()
     path = scene.parent.parent
-    json_path = path / "mp3d.scene_dataset_config.json"
+    if scene_type=='mp3d':
+        json_path = path / "mp3d.scene_dataset_config.json"
+    elif scene_type=='hm3d':
+        json_path = path / "hm3d_annotated_train_basis.scene_dataset_config.json"
+    else:
+        raise NotImplementedError('scene type not implemented.')
+
     sim_cfg.scene_dataset_config_file = str(json_path)
     sim_cfg.gpu_device_id = 0
     sim_cfg.scene_id = str(scene)
@@ -189,21 +195,28 @@ def _camera_point_from_habitat(p_ah, z_offset=1.5):
 class HabitatInterface:
     """Class handling interfacing with habitat."""
 
-    def __init__(self, scene: Union[str, pathlib.Path]):
+    def __init__(self, scene: Union[str, pathlib.Path], scene_type: str='mp3d'):
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
+        self._scene_type = scene_type
+
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
-        config, camera_info = _make_habitat_config(scene)
+        config, camera_info = _make_habitat_config(scene, scene_type=scene_type)
         self._house_path = scene.parent / f"{scene.stem}.house"
         self._camera_info = camera_info
+        
         self._sim = habitat_sim.Simulator(config)
-        self._make_instance_labelmap()
+        
+        if scene_type=='mp3d':
+            self._make_instance_labelmap_mp3d()
+        if scene_type=='hm3d':
+            self._make_instance_labelmap_hm3d()
 
         self._obs = None
         self._labels = None
 
-    def _make_instance_labelmap(self):
+    def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {
             c.id: c.category.index() for c in self._sim.semantic_scene.objects
         }
@@ -229,6 +242,22 @@ class HabitatInterface:
 
         keys = sorted([x for x in ade_to_mpcat])
         names = [name_mapping[ade_to_mpcat[idx]] for idx in keys]
+        self._colormap = hydra.SegmentationColormap.from_names(names=names)
+    
+    def _make_instance_labelmap_hm3d(self):
+        object_to_cat_map = {
+            c.id: c.category.index() for c in self._sim.semantic_scene.objects
+        }
+
+        category_map = np.array(list(object_to_cat_map.values()))
+        self._labelmap = hydra.LabelConverter(category_map)
+
+        name_mapping = {}
+        for c in self._sim.semantic_scene.categories:
+            name_mapping[c.index()] = c.name()
+
+        hm3d_cat_idxs = sorted(list(name_mapping.keys()))
+        names = [name_mapping[idx] for idx in hm3d_cat_idxs]
         self._colormap = hydra.SegmentationColormap.from_names(names=names)
 
     def get_full_trajectory(
