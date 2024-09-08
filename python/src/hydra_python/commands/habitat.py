@@ -24,7 +24,7 @@ def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
                 "Finding random trajectory",
                 fg="yellow",
             )
-        poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed)
+        poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed, target_length_m=0.1)
 
     click.secho(f"Trajectory is {poses.get_path_length()} meters long", fg="green")
     return poses
@@ -72,6 +72,9 @@ def run(
     """Run Hydra against a habitat scene."""
     from hydra_python._plugins import habitat
 
+    if 'hm3d' in scene_type:
+        label_space = 'hm3d'
+
     hydra.set_glog_level(glog_level, verbosity)
     output_path = hydra.resolve_output_path(output_path, force=force)
     data = habitat.HabitatInterface(scene_path, scene_type=scene_type)
@@ -89,6 +92,7 @@ def run(
     pipeline_config.enable_reconstruction = True
     pipeline_config.label_names = {i: x for i, x in enumerate(data.colormap.names)}
     data.colormap.fill_label_space(pipeline_config.label_space)
+
     if output_path:
         pipeline_config.logs.log_dir = str(output_path)
 

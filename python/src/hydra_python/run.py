@@ -49,7 +49,7 @@ def _take_step(pipeline, data, pose, segmenter, image_viz):
 
     pipeline.step(timestamp, world_t_body, q_wxyz, data.depth, labels, data.rgb)
 
-import imageio
+import imageio, cv2
 def run(
     pipeline,
     data,
@@ -63,8 +63,7 @@ def run(
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
 
-    imgs = []
-    imgs_rgb = []
+    imgs_colormap, imgs_rgb, imgs_labels = [], [], []
 
     if show_progress:
         with click.progressbar(pose_source) as bar:
@@ -75,9 +74,30 @@ def run(
     else:
         for pose in pose_source:
             _take_step(pipeline, data, pose, segmenter, image_viz)
-            imgs.append(data.colormap(data.labels))
+            imgs_colormap.append(data.colormap(data.labels))
+            imgs_labels.append(data.labels)
             imgs_rgb.append(data.rgb)
             if step_callback:
                 step_callback(pipeline, visualizer)
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_semantic.gif', imgs)
+    
+    # Parameters for text overlay
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.3
+    font_color = (255, 255, 255)
+    thickness = 1
+    step_size = 1200  # Adjust step size for sparse labeling
+    labeled_frames = []
+    for idx in range(len(imgs_colormap)):
+        color_img = imgs_colormap[idx].copy()
+        unique_labels = np.unique(imgs_labels[idx])
+        for label in unique_labels:
+            points = np.argwhere(imgs_labels[idx] == label)
+            for i, point in enumerate(points[::step_size]):
+                y, x = point
+                cv2.putText(color_img, str(f'{label}:{data.colormap.names[label]}'), (x, y), font, font_scale, font_color, thickness, cv2.LINE_AA)
+
+        labeled_frames.append(color_img)
+
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_semantic.gif', imgs_colormap)
     imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_rgb.gif', imgs_rgb)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_labeled_frames.gif', labeled_frames)

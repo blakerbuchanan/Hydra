@@ -10,6 +10,7 @@ import pathlib
 import magnum
 import random
 import os
+import yaml
 
 
 MISSING_ADE_LABELS = [29, 33]
@@ -192,6 +193,19 @@ def _camera_point_from_habitat(p_ah, z_offset=1.5):
     return p_bw
 
 
+def _format_list(name, values, collapse=True, **kwargs):
+    indent = kwargs.get("indent", 0)
+    prefix = " " * indent + name if indent > 0 else name
+    if collapse:
+        indent += 2
+
+    args = {
+        k: v for k, v in kwargs.items() if k != "indent" and k != "default_flow_style"
+    }
+    args["indent"] = indent
+    value_str = yaml.dump(values, default_flow_style=collapse, **args)
+    return f"{prefix}: {value_str}"
+
 class HabitatInterface:
     """Class handling interfacing with habitat."""
 
@@ -212,6 +226,7 @@ class HabitatInterface:
             self._make_instance_labelmap_mp3d()
         if scene_type=='hm3d':
             self._make_instance_labelmap_hm3d()
+            # self._write_config_yaml()
 
         self._obs = None
         self._labels = None
@@ -259,6 +274,39 @@ class HabitatInterface:
         hm3d_cat_idxs = sorted(list(name_mapping.keys()))
         names = [name_mapping[idx] for idx in hm3d_cat_idxs]
         self._colormap = hydra.SegmentationColormap.from_names(names=names)
+
+    def _write_config_yaml(self):
+        output_path = pathlib.Path("/home/saumyas/catkin_ws_semnav/src/hydra/config/label_spaces/hm3d_label_space.yaml")
+        invalid_labels = []
+        surface_labels = []
+        dynamic_labels = []
+        object_labels = []
+        output_names = []
+
+        for id, name in enumerate(self._colormap.names):
+            output_names.append({"label": id, "name": name})
+            if 'unknown' in name.lower():
+                invalid_labels.append(id)
+            elif 'floor' in name.lower():
+                surface_labels.append(id)
+            else:
+                object_labels.append(id)
+
+        with output_path.open("w") as fout:
+            fout.write("---\n")
+
+            fout.write(yaml.dump({"total_semantic_labels": len(self._colormap.names)}))
+            fout.write(_format_list("dynamic_labels", dynamic_labels))
+            fout.write(_format_list("invalid_labels", invalid_labels))
+            fout.write("object_labels:\n")
+            for name in object_labels:
+                fout.write("  - " + yaml.dump(name, default_flow_style=True))
+            fout.write(_format_list("surface_places_labels", surface_labels))
+
+            fout.write("label_names:\n")
+            for name in output_names:
+                fout.write("  - " + yaml.dump(name, default_flow_style=True))
+
 
     def get_full_trajectory(
         self,
