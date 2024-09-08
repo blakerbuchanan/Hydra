@@ -17,6 +17,7 @@
 - git:
     local-name: spark_dsg
     uri: git@github.com:blakerbuchanan/Spark-DSG.git
+    version: semnav
 - git:
     local-name: spatial_hash
     uri: git@github.com:MIT-SPARK/Spatial-Hash.git
