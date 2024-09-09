@@ -68,11 +68,16 @@ def run(
     if show_progress:
         with click.progressbar(pose_source) as bar:
             for pose in bar:
+                # We can change this directory when we determine how we want to save out the gifs at the end
+                pipeline.graph.save("/home/saumyas/catkin_ws_semnav/temp_blake/dsg.json", False)
+                pipeline.graph.save_filtered("/home/saumyas/catkin_ws_semnav/temp_blake/filtered_dsg.json", False)
                 _take_step(pipeline, data, pose, segmenter, image_viz)
                 if step_callback:
                     step_callback(pipeline, visualizer)
     else:
         for pose in pose_source:
+            pipeline.graph.save("/home/saumyas/catkin_ws_semnav/temp_blake/dsg.json", False)
+            pipeline.graph.save_filtered("/home/saumyas/catkin_ws_semnav/temp_blake/filtered_dsg.json", False)
             _take_step(pipeline, data, pose, segmenter, image_viz)
             imgs_colormap.append(data.colormap(data.labels))
             imgs_labels.append(data.labels)
