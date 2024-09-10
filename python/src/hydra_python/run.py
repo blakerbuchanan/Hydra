@@ -84,13 +84,13 @@ def run(
             imgs_rgb.append(data.rgb)
             if step_callback:
                 step_callback(pipeline, visualizer)
-    
+            
     # Parameters for text overlay
     font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 0.3
-    font_color = (255, 255, 255)
+    font_scale = 0.6
+    font_color = (0, 0, 0)
     thickness = 1
-    step_size = 1200  # Adjust step size for sparse labeling
+    step_size = 2000  # Adjust step size for sparse labeling
     labeled_frames = []
     for idx in range(len(imgs_colormap)):
         color_img = imgs_colormap[idx].copy()
@@ -103,6 +103,6 @@ def run(
 
         labeled_frames.append(color_img)
 
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_semantic.gif', imgs_colormap)
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_rgb.gif', imgs_rgb)
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/images_hm3d_labeled_frames.gif', labeled_frames)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_semantic.gif', imgs_colormap)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_rgb.gif', imgs_rgb)
+    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_labeled_frames.gif', labeled_frames)

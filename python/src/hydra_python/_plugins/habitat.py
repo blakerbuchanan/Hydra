@@ -30,6 +30,36 @@ def _compute_path_distance(G, nodes):
 
     return dist
 
+def _visualize_navmesh(vertices, positions_habitat=None):
+    import matplotlib.pyplot as plt
+    # Separate the x, y, z coordinates for plotting
+    x_coords = [v[0] for v in vertices]
+    y_coords = [v[1] for v in vertices]
+    z_coords = [v[2] for v in vertices]
+
+    # Create a 3D plot using Matplotlib
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(x_coords, y_coords, z_coords, c='r', marker='o', s=1, label='NavMesh Vertices')  # s is size of points
+
+    if positions_habitat is not None:
+        x_path = [v[0] for v in positions_habitat]
+        y_path = [v[1] for v in positions_habitat]
+        z_path = [v[2] for v in positions_habitat]
+
+        ax.plot(x_path, y_path, z_path, color='b', linewidth=2, label='Path')  # s is size of points
+    
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+    ax.set_zlabel('Z Coordinate')
+
+    ax.view_init(elev=0, azim=-90)
+    
+    plt.legend()
+
+    # Show the plot
+    plt.title("NavMesh Vertices Visualization")
+    plt.savefig("/home/saumyas/catkin_ws_semnav/src/hydra/results/media/navmesh_hm3d_y_random_path.png")
 
 def _build_navgraph(sim, pathfinder, settings, threshold):
     success = sim.recompute_navmesh(pathfinder, settings)
@@ -37,6 +67,7 @@ def _build_navgraph(sim, pathfinder, settings, threshold):
         raise RuntimeError("Failed to make navmesh")
 
     faces = pathfinder.build_navmesh_vertices()
+
     G = nx.Graph()
 
     vertices = []
@@ -322,6 +353,7 @@ class HabitatInterface:
         pathfinder = habitat_sim.nav.PathFinder()
         settings = habitat_sim.NavMeshSettings()
         settings.agent_radius = inflation_radius
+
         G = _build_navgraph(self._sim, pathfinder, settings, threshold)
         components = list(nx.connected_components(G))
         if len(components) > 1:
@@ -391,7 +423,14 @@ class HabitatInterface:
             )
 
         return traj
-
+    
+    def get_navgraph(self, inflation_radius=0.1, threshold=1.0e-3):
+        pathfinder = habitat_sim.nav.PathFinder()
+        settings = habitat_sim.NavMeshSettings()
+        settings.agent_radius = inflation_radius
+        G = _build_navgraph(self._sim, pathfinder, settings, threshold)
+        return G
+    
     def get_random_trajectory(
         self,
         target_length_m=100.0,
@@ -401,10 +440,7 @@ class HabitatInterface:
         z_offset=0.5,
     ):
         """Get a trajectory as sequence of segments between random areas in a scene."""
-        pathfinder = habitat_sim.nav.PathFinder()
-        settings = habitat_sim.NavMeshSettings()
-        settings.agent_radius = inflation_radius
-        G = _build_navgraph(self._sim, pathfinder, settings, threshold)
+        G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
 
         if seed is not None:
             random.seed(seed)
@@ -432,6 +468,50 @@ class HabitatInterface:
         return hydra.Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
+    
+    def get_trajectory_to_pose(self, start, end, G=None, inflation_radius=0.1, threshold=1.0e-3, z_offset=0.5):
+        """Get a trajectory from start to end in navgraph G."""
+
+        if G is None:
+            G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
+
+        nodes = nx.shortest_path(G, source=start, target=end, weight="weight")
+
+        positions_habitat = [G.nodes[x]["pos"] for x in nodes]
+
+        positions_camera = [
+            _camera_point_from_habitat(p, z_offset=z_offset) for p in positions_habitat
+        ]
+        b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
+        return hydra.Trajectory.from_positions(
+            np.array(positions_camera), body_R_camera=b_R_c
+        )
+
+    def get_rotate_in_place_trajectory(
+        self, 
+        G=None, 
+        inflation_radius=0.1, 
+        threshold=1.0e-3,
+        seed=None,
+        z_offset=0.5
+    ):
+
+        if G is None:
+            G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
+        
+        if seed is not None:
+            np.random.seed(seed)
+            
+        start = np.random.choice([x for x in G])
+        start_pos_habitat = G.nodes[start]["pos"]
+
+        position_camera = _camera_point_from_habitat(start_pos_habitat, z_offset=z_offset)
+        b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
+
+        return hydra.Trajectory.rotate(
+            np.array(position_camera), body_R_camera=b_R_c
+        )
+
 
     def set_pose(self, timestamp, world_T_camera):
         """Set pose of the agent directly."""

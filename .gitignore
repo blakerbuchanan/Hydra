@@ -216,3 +216,4 @@ pyrightconfig.json
 compile_commands.json
 
 data/
+results/
