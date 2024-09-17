@@ -59,6 +59,8 @@ def run(
     show_images=False,
     show_progress=True,
     step_callback=hydra_output_callback,
+    output_path=None,
+    suffix=' ',
 ):
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
@@ -69,15 +71,15 @@ def run(
         with click.progressbar(pose_source) as bar:
             for pose in bar:
                 # We can change this directory when we determine how we want to save out the gifs at the end
-                pipeline.graph.save("/home/saumyas/catkin_ws_semnav/temp_blake/dsg.json", False)
-                pipeline.graph.save_filtered("/home/saumyas/catkin_ws_semnav/temp_blake/filtered_dsg.json", False)
+                pipeline.graph.save(output_path / "dsg.json", False)
+                pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
                 _take_step(pipeline, data, pose, segmenter, image_viz)
                 if step_callback:
                     step_callback(pipeline, visualizer)
     else:
         for pose in pose_source:
-            pipeline.graph.save("/home/saumyas/catkin_ws_semnav/temp_blake/dsg.json", False)
-            pipeline.graph.save_filtered("/home/saumyas/catkin_ws_semnav/temp_blake/filtered_dsg.json", False)
+            pipeline.graph.save(output_path / "dsg.json", False)
+            pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
             _take_step(pipeline, data, pose, segmenter, image_viz)
             imgs_colormap.append(data.colormap(data.labels))
             imgs_labels.append(data.labels)
@@ -103,6 +105,6 @@ def run(
 
         labeled_frames.append(color_img)
 
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_semantic.gif', imgs_colormap)
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_rgb.gif', imgs_rgb)
-    imageio.mimsave('/home/saumyas/catkin_ws_semnav/temp_blake/images_hm3d_labeled_frames.gif', labeled_frames)
+    imageio.mimsave(output_path / f'images_hm3d_semantic_{suffix}.gif', imgs_colormap)
+    imageio.mimsave(output_path / f'images_hm3d_rgb_{suffix}.gif', imgs_rgb)
+    imageio.mimsave(output_path / f'images_hm3d_labeled_frame_{suffix}s.gif', labeled_frames)

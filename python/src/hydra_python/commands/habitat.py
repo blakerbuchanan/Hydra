@@ -7,7 +7,11 @@ import click
 import yaml
 
 import numpy as np
+import random
 import matplotlib.pyplot as plt
+import habitat_sim
+import pickle
+from itertools import chain
 
 
 def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
@@ -15,23 +19,86 @@ def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
         prev_path = pathlib.Path(prev_dsg).resolve()
         poses = hydra.Trajectory.from_scene_graph(str(prev_path))
     elif use_full_scene:
-        poses = data.get_full_trajectory(inflation_radius=0.25, seed=seed)
+        poses = data.get_full_trajectory(seed=seed)
         if poses is None:
             click.secho(
                 "Failed to find trajectory for single room! Defaulting to random",
                 fg="yellow",
             )
-            poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed)
+            poses = data.get_random_trajectory(seed=seed)
     else:
         click.secho(
                 "Finding random trajectory",
                 fg="yellow",
             )
-        poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed, target_length_m=0.1)
+        poses = data.get_random_trajectory(seed=seed, target_length_m=0.1)
         
 
     click.secho(f"Trajectory is {poses.get_path_length()} meters long", fg="green")
     return poses
+
+def _plot_sg_trajs(navmesh_nodes, poses, target_poses, pipeline, output_path, suffix, view='XY'):
+
+    fig = plt.figure(figsize=(12, 12))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(navmesh_nodes[:,0], navmesh_nodes[:,1], navmesh_nodes[:,2], c='r', marker='o', s=1, label='NavMesh Vertices')
+
+    # Plotting trajectories
+    # pos_traj = np.array([v[1] for v in poses])
+    pos_traj = np.array(poses)
+    ax.plot(pos_traj[:,0], pos_traj[:,1], pos_traj[:,2], color='b', linewidth=2, label='Path')
+    ax.scatter(pos_traj[0,0], pos_traj[0,1], pos_traj[0,2],  c='b', marker='D', s=15, label='Start')
+    ax.scatter(np.array(target_poses)[:,0], np.array(target_poses)[:,1], np.array(target_poses)[:,2],  c='red', marker='D', s=30, label='Target pose')
+    
+    place_node_positions = []
+    active_frontier_place_node_positions = []
+    object_node_positions = []
+    for node in pipeline.graph.nodes:
+        if 'p' in node.id.category.lower():
+            # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            place_node_positions.append(node.attributes.position)
+        if 'f' in node.id.category.lower():
+            # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            active_frontier_place_node_positions.append(node.attributes.position)
+        if 'o' in node.id.category.lower():
+            object_node_positions.append(node.attributes.position)
+
+    place_node_positions = np.array(place_node_positions)
+    active_frontier_place_node_positions = np.array(active_frontier_place_node_positions)
+    object_node_positions = np.array(object_node_positions)
+
+    agent_node_positions = []
+    for layer in pipeline.graph.dynamic_layers:
+        for node in layer.nodes:
+            # print(f"layer: {node.layer}. Category: {node.id.category.lower()} {node.id.category_id}")
+            if 'a' in node.id.category.lower():
+                agent_node_positions.append(node.attributes.position)
+    agent_node_positions = np.array(agent_node_positions)
+
+    ax.scatter(place_node_positions[:,0], place_node_positions[:,1], place_node_positions[:,2],  c='green', marker='o', s=6, label='Place nodes')
+    ax.scatter(active_frontier_place_node_positions[:,0], active_frontier_place_node_positions[:,1], active_frontier_place_node_positions[:,2],  c='black', marker='D', s=10, label='Frontier nodes')
+    ax.scatter(agent_node_positions[:,0], agent_node_positions[:,1], agent_node_positions[:,2],  c='blue', marker='o', s=12, label='Agent nodes')
+    ax.scatter(object_node_positions[:,0], object_node_positions[:,1], object_node_positions[:,2],  c='purple', marker='s', s=14, label='Object nodes')
+
+    ax.set_xlabel('X Coordinate')
+    ax.set_ylabel('Y Coordinate')
+    ax.set_zlabel('Z Coordinate')
+
+    if view == 'XY':
+        ax.view_init(elev=90, azim=-90)
+        filename = output_path / f"hm3d_planner_{suffix}_XY.png"
+    if view == 'XZ':
+        ax.view_init(elev=0, azim=-90)
+        filename = output_path / f"hm3d_planner_{suffix}_XZ.png"
+
+    plt.legend()
+    plt.title("NavMesh Vertices Visualization")
+    plt.savefig(filename)
+
+    with open(output_path / f"hm3d_planner_plt_{suffix}.pkl", 'wb') as f:
+        pickle.dump(fig, f)
+
+    plt.close()
 
 
 @click.group(name="habitat")
@@ -81,7 +148,7 @@ def run(
 
     hydra.set_glog_level(glog_level, verbosity)
     output_path = hydra.resolve_output_path(output_path, force=force)
-    data = habitat.HabitatInterface(scene_path, scene_type=scene_type)
+    data = habitat.HabitatInterface(scene_path, scene_type=scene_type, inflation_radius=0.25, z_offset=0.5)
     poses = _get_trajectory(data, prev_dsg, seed, use_full_scene=use_full_scene)
 
     configs = hydra.load_configs("habitat", labelspace_name=label_space)
@@ -125,6 +192,8 @@ def run(
             visualizer=visualizer,
             show_images=show_images,
             show_progress=show_progress,
+            output_path=output_path,
+            suffix='test',
         )
     finally:
         pipeline.save()
@@ -196,6 +265,8 @@ def reconstruction(
             show_images=show_images,
             show_progress=show_progress,
             step_callback=None,
+            output_path=output_path,
+            suffix='',
         )
     finally:
         pipeline.save()
@@ -239,6 +310,8 @@ def record(
             show_images=show_images,
             show_progress=show_progress,
             step_callback=None,
+            output_path=output_path,
+            suffix='',
         )
 
 @cli.command(name="camera-info")
@@ -294,9 +367,6 @@ def run_sg_planner(
     output_path = hydra.resolve_output_path(output_path, force=force)
     data = habitat.HabitatInterface(scene_path, scene_type=scene_type)
 
-    """Get a trajectory as sequence of segments between random areas in a scene."""
-    G = data.get_navgraph(inflation_radius=0.25)
-
     configs = hydra.load_configs("habitat", labelspace_name=label_space)
     if not configs:
         click.secho(
@@ -330,22 +400,21 @@ def run_sg_planner(
     else:
         visualizer = None
 
+    # FOR PLOTTING THE NAVMESH
+    graph_nodes = [data.G.nodes[n]["pos"] for n in data.G]
+    positions_camera = np.array([hydra._plugins.habitat._camera_point_from_habitat(p, z_offset=data.z_offset) for p in graph_nodes])
 
-    # PLOT THE NAVMESH
-    graph_nodes = [G.nodes[n]["pos"] for n in G]
-    positions_camera = np.array([hydra._plugins.habitat._camera_point_from_habitat(p, z_offset=0.5) for p in graph_nodes])
-    fig = plt.figure(figsize=(12, 12))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(positions_camera[:,0], positions_camera[:,1], positions_camera[:,2], c='r', marker='o', s=1, label='NavMesh Vertices')
+    agent_state = data.get_state()
+    click.secho(f"Agent state: {agent_state}",fg="yellow",)
 
+    # Find intial exploration traj
+    click.secho("Finding rotate in place trajectory",fg="yellow",)
+    poses = data.get_rotate_in_place_trajectory(seed=seed)
 
-    # Run initial traj
-    # click.secho("Finding rotate in place trajectory",fg="yellow",)
-    # poses = data.get_rotate_in_place_trajectory(inflation_radius=0.25, seed=seed)
+    # click.secho("Finding random trajectory",fg="yellow",)
+    # poses = data.get_random_trajectory(seed=seed, target_length_m=0.1)
 
-    click.secho("Finding random trajectory",fg="yellow",)
-    poses = data.get_random_trajectory(inflation_radius=0.25, seed=seed, target_length_m=0.1)
-
+    suffix = 't_0'
     hydra.run(
         pipeline,
         data,
@@ -353,57 +422,78 @@ def run_sg_planner(
         visualizer=visualizer,
         show_images=show_images,
         show_progress=show_progress,
+        output_path=output_path,
+        suffix=suffix,
     )
 
-    # steps = 20
-    # for step in range(steps):
-    #     # _get_next_pose()
-    #     # _get_trajectory_to_pose()
-    #     # loop over the trajectory
-    #     # plot stuff
-    #     pass
-
-    # Plotting trajectories
     pos_traj = np.array([v[1] for v in poses])
 
-    ax.plot(pos_traj[:,0], pos_traj[:,1], pos_traj[:,2], color='b', linewidth=2, label='Path')
-    ax.scatter(pos_traj[0,0], pos_traj[0,1], pos_traj[0,2],  c='b', marker='D', s=6, label='Start')
-    # ax.scatter(pos_traj[-1,0], pos_traj[-1,1], pos_traj[-1,2],  c='b', marker='D', s=4, label='End')
+    target_poses = []
+    target_poses.append(pos_traj[-1])
+    poses_to_plot = [v[1] for v in poses]
+    _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
+    _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
     
-    click.secho("Finding nodes in graph",fg="yellow",)
-    place_node_positions = []
-    active_frontier_place_node_positions = []
-    for node in pipeline.graph.nodes:
-        if 'p' in node.id.category.lower():
-            print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
-            place_node_positions.append(node.attributes.position)
-        if 'f' in node.id.category.lower():
-            print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
-            active_frontier_place_node_positions.append(node.attributes.position)
-    place_node_positions = np.array(place_node_positions)
-    active_frontier_place_node_positions = np.array(active_frontier_place_node_positions)
+    # agent_state = data.get_state()
+    # click.secho(f"Agent state: {agent_state}",fg="yellow",)
 
-    click.secho("Finding dynamic nodes in graph",fg="yellow",)
-    agent_node_positions = []
-    for layer in pipeline.graph.dynamic_layers:
-        for node in layer.nodes:
-            print(f"layer: {node.layer}. Category: {node.id.category.lower()} {node.id.category_id}")
-            if 'a' in node.id.category.lower():
-                agent_node_positions.append(node.attributes.position)
-    agent_node_positions = np.array(agent_node_positions)
+    # sg_sim = hydra.SceneGraphSim(output_path, pipeline)
+    # sg_sim.test_sg()
+    
+    # # Randomly sample a frontier node and goto it
+    # active_frontier_place_node_positions = []
+    # for node in pipeline.graph.nodes:
+    #     if 'f' in node.id.category.lower():
+    #         active_frontier_place_node_positions.append(node.attributes.position)
+    
+    # target_pose = random.choice(active_frontier_place_node_positions).copy()
+    # target_pose[2] = agent_state[2]
 
-    ax.scatter(place_node_positions[:,0], place_node_positions[:,1], place_node_positions[:,2],  c='green', marker='o', s=6, label='Place nodes')
-    ax.scatter(active_frontier_place_node_positions[:,0], active_frontier_place_node_positions[:,1], active_frontier_place_node_positions[:,2],  c='purple', marker='D', s=10, label='Frontier nodes')
-    ax.scatter(agent_node_positions[:,0], agent_node_positions[:,1], agent_node_positions[:,2],  c='black', marker='o', s=8, label='Agent nodes')
+    # poses = data.get_trajectory_to_pose(agent_state, target_pose)
 
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-    ax.set_zlabel('Z Coordinate')
-    ax.view_init(elev=90, azim=-90)
-    plt.legend()
-    plt.title("NavMesh Vertices Visualization")
-    filename = output_path / "navmesh_hm3d_frontier.png"
-    plt.savefig(filename)
+    # hydra.run(
+    #     pipeline,
+    #     data,
+    #     poses,
+    #     visualizer=visualizer,
+    #     show_images=show_images,
+    #     show_progress=show_progress,
+    # )
+
+    # sg_sim.update()
+    # sg_sim.test_sg()
+
+    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XY')
+    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XZ')
+    
+
+    instr = 'Go to the kitchen.'
+    planner = hydra.VLMPLanner(instr, output_path, pipeline)
+    t=1
+    while not planner.done:
+        agent_state = data.get_state()
+        target_pose = planner.get_next_action()
+        if target_pose is not None:
+            target_pose[2] = agent_state[2] # TODO(saumya): filter frontier nodes to only include nodes in agent place
+            poses = data.get_trajectory_to_pose(agent_state, target_pose)
+
+            suffix = f't_{planner.t}'
+            if poses is not None:
+                hydra.run(
+                    pipeline,
+                    data,
+                    poses,
+                    visualizer=visualizer,
+                    show_images=show_images,
+                    show_progress=show_progress,
+                    output_path=output_path,
+                    suffix=suffix,
+                )
+                poses_to_plot.extend([v[1] for v in poses])
+                target_poses.append(target_pose)
+                _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
+                _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
+                t+=1
 
     pipeline.save()
     if visualizer is not None:

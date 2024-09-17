@@ -30,37 +30,6 @@ def _compute_path_distance(G, nodes):
 
     return dist
 
-def _visualize_navmesh(vertices, positions_habitat=None):
-    import matplotlib.pyplot as plt
-    # Separate the x, y, z coordinates for plotting
-    x_coords = [v[0] for v in vertices]
-    y_coords = [v[1] for v in vertices]
-    z_coords = [v[2] for v in vertices]
-
-    # Create a 3D plot using Matplotlib
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(x_coords, y_coords, z_coords, c='r', marker='o', s=1, label='NavMesh Vertices')  # s is size of points
-
-    if positions_habitat is not None:
-        x_path = [v[0] for v in positions_habitat]
-        y_path = [v[1] for v in positions_habitat]
-        z_path = [v[2] for v in positions_habitat]
-
-        ax.plot(x_path, y_path, z_path, color='b', linewidth=2, label='Path')  # s is size of points
-    
-    ax.set_xlabel('X Coordinate')
-    ax.set_ylabel('Y Coordinate')
-    ax.set_zlabel('Z Coordinate')
-
-    ax.view_init(elev=0, azim=-90)
-    
-    plt.legend()
-
-    # Show the plot
-    plt.title("NavMesh Vertices Visualization")
-    plt.savefig("/home/saumyas/catkin_ws_semnav/src/hydra/results/media/navmesh_hm3d_y_random_path.png")
-
 def _build_navgraph(sim, pathfinder, settings, threshold):
     success = sim.recompute_navmesh(pathfinder, settings)
     if not success:
@@ -219,10 +188,14 @@ def _camera_point_from_habitat(p_ah, z_offset=1.5):
     bw_R_bh = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
     p_bw = np.squeeze(bw_R_bh @ p_bh.reshape((3, 1)))
 
-    # bw_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
-    # p_c = np.squeeze(bw_R_c.T @ p_bw.reshape((3, 1)))
     return p_bw
 
+def _camera_point_to_habitat(p_camera, z_offset=1.5):
+    p_habitat = p_camera.copy()
+    p_habitat[2] -= z_offset
+    bw_R_c = np.array([[0, -1, 0], [0, 0, 1], [-1, 0, 0]])
+    p_habitat = np.squeeze(bw_R_c @ p_habitat.reshape((3, 1)))
+    return p_habitat
 
 def _format_list(name, values, collapse=True, **kwargs):
     indent = kwargs.get("indent", 0)
@@ -240,10 +213,17 @@ def _format_list(name, values, collapse=True, **kwargs):
 class HabitatInterface:
     """Class handling interfacing with habitat."""
 
-    def __init__(self, scene: Union[str, pathlib.Path], scene_type: str='mp3d'):
+    def __init__(
+            self, 
+            scene: Union[str, pathlib.Path], 
+            scene_type: str='mp3d',
+            inflation_radius=0.25,
+            z_offset=0.5):
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
         self._scene_type = scene_type
+        self.inflation_radius = inflation_radius
+        self.z_offset = z_offset
 
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
@@ -261,6 +241,8 @@ class HabitatInterface:
 
         self._obs = None
         self._labels = None
+
+        self._make_navgraph(inflation_radius=inflation_radius)
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {
@@ -338,24 +320,22 @@ class HabitatInterface:
             for name in output_names:
                 fout.write("  - " + yaml.dump(name, default_flow_style=True))
 
-
+    def _make_navgraph(self, inflation_radius=0.1, threshold=1.0e-3):
+        pathfinder = habitat_sim.nav.PathFinder()
+        settings = habitat_sim.NavMeshSettings()
+        settings.agent_radius = inflation_radius
+        self.G = _build_navgraph(self._sim, pathfinder, settings, threshold)
+    
     def get_full_trajectory(
         self,
-        inflation_radius=0.1,
-        threshold=1.0e-3,
         seed=None,
-        z_offset=1.0,
         add_reverse=False,
         max_room_distance=5.0,
         **kwargs,
     ):
         """Get a trajectory that explores the entire scene."""
-        pathfinder = habitat_sim.nav.PathFinder()
-        settings = habitat_sim.NavMeshSettings()
-        settings.agent_radius = inflation_radius
 
-        G = _build_navgraph(self._sim, pathfinder, settings, threshold)
-        components = list(nx.connected_components(G))
+        components = list(nx.connected_components(self.G))
         if len(components) > 1:
             print("Warning: {len(components)} components found in navgraph!")
             components = sorted(components, lambda x: len(x), reverse=True)
@@ -368,7 +348,7 @@ class HabitatInterface:
             best_node = None
             best_distance = None
             for x in components[0]:
-                pos = _camera_point_from_habitat(G.nodes[x]["pos"], z_offset=z_offset)
+                pos = _camera_point_from_habitat(G.nodes[x]["pos"], z_offset=self.z_offset)
                 dist = np.linalg.norm(pos - room.centroid)
                 if not best_distance or dist < best_distance:
                     best_node = x
@@ -379,7 +359,7 @@ class HabitatInterface:
 
             if best_distance > max_room_distance:
                 pos = _camera_point_from_habitat(
-                    G.nodes[best_node]["pos"], z_offset=z_offset
+                    self.G.nodes[best_node]["pos"], z_offset=self.z_offset
                 )
                 print(f"No node for {room.get_id()} @ {np.squeeze(room.centroid)}")
                 print(f"Closest: {best_node} @ {np.squeeze(pos)}")
@@ -398,20 +378,20 @@ class HabitatInterface:
             node_sequence = node_sequence + node_sequence[::-1]
 
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
-        first_pos_habitat = G.nodes[node_sequence[0]]["pos"]
-        first_pos_cam = _camera_point_from_habitat(first_pos_habitat, z_offset=z_offset)
+        first_pos_habitat = self.G.nodes[node_sequence[0]]["pos"]
+        first_pos_cam = _camera_point_from_habitat(first_pos_habitat, z_offset=self.z_offset)
 
         traj = hydra.Trajectory.rotate(first_pos_cam, body_R_camera=b_R_c, **kwargs)
         for i in range(len(node_sequence) - 1):
             start = node_sequence[i]
             end = node_sequence[i + 1]
-            nodes = nx.shortest_path(G, source=start, target=end, weight="weight")
+            nodes = nx.shortest_path(self.G, source=start, target=end, weight="weight")
             if len(nodes) <= 1:
                 continue
 
-            pos_habitat = [G.nodes[x]["pos"] for x in nodes]
+            pos_habitat = [self.G.nodes[x]["pos"] for x in nodes]
             pos_cam = [
-                _camera_point_from_habitat(p, z_offset=z_offset) for p in pos_habitat
+                _camera_point_from_habitat(p, z_offset=self.z_offset) for p in pos_habitat
             ]
             new_traj = hydra.Trajectory.from_positions(
                 np.array(pos_cam), body_R_camera=b_R_c, **kwargs
@@ -424,28 +404,18 @@ class HabitatInterface:
 
         return traj
     
-    def get_navgraph(self, inflation_radius=0.1, threshold=1.0e-3):
-        pathfinder = habitat_sim.nav.PathFinder()
-        settings = habitat_sim.NavMeshSettings()
-        settings.agent_radius = inflation_radius
-        G = _build_navgraph(self._sim, pathfinder, settings, threshold)
-        return G
-    
+
     def get_random_trajectory(
         self,
         target_length_m=100.0,
-        inflation_radius=0.1,
-        threshold=1.0e-3,
         seed=None,
-        z_offset=0.5,
     ):
         """Get a trajectory as sequence of segments between random areas in a scene."""
-        G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
 
         if seed is not None:
             random.seed(seed)
 
-        node_sequence = [x for x in G]
+        node_sequence = [x for x in self.G]
         random.shuffle(node_sequence)
 
         path = []
@@ -453,65 +423,71 @@ class HabitatInterface:
         for i in range(len(node_sequence) - 1):
             start = node_sequence[i]
             end = node_sequence[i + 1]
-            nodes = nx.shortest_path(G, source=start, target=end, weight="weight")
-            total_length += _compute_path_distance(G, nodes)
+            nodes = nx.shortest_path(self.G, source=start, target=end, weight="weight")
+            total_length += _compute_path_distance(self.G, nodes)
             path += nodes[:-1]
 
             if total_length > target_length_m:
                 break
 
-        positions_habitat = [G.nodes[x]["pos"] for x in path]
+        positions_habitat = [self.G.nodes[x]["pos"] for x in path]
         positions_camera = [
-            _camera_point_from_habitat(p, z_offset=z_offset) for p in positions_habitat
+            _camera_point_from_habitat(p, z_offset=self.z_offset) for p in positions_habitat
         ]
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
         return hydra.Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
     
-    def get_trajectory_to_pose(self, start, end, G=None, inflation_radius=0.1, threshold=1.0e-3, z_offset=0.5):
+    def get_trajectory_to_pose(self, start, end):
         """Get a trajectory from start to end in navgraph G."""
 
-        if G is None:
-            G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
+        start_habitat = _camera_point_to_habitat(start, z_offset=self.z_offset)
+        end_habitat = _camera_point_to_habitat(end, z_offset=self.z_offset)
 
-        nodes = nx.shortest_path(G, source=start, target=end, weight="weight")
+        # Find closest node on graph
+        node_sequence = [x for x in self.G]
+        pos_nodes = np.array([self.G.nodes[x]["pos"] for x in self.G]).squeeze()
 
-        positions_habitat = [G.nodes[x]["pos"] for x in nodes]
+        start_idx = np.argmin(np.linalg.norm(pos_nodes - start_habitat, axis=-1))
+        end_idx = np.argmin(np.linalg.norm(pos_nodes - end_habitat, axis=-1))
+
+        nodes = nx.shortest_path(self.G, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
+
+        positions_habitat = [self.G.nodes[x]["pos"] for x in nodes]
+        
+        if len(positions_habitat) < 2:
+            return None
 
         positions_camera = [
-            _camera_point_from_habitat(p, z_offset=z_offset) for p in positions_habitat
+            _camera_point_from_habitat(p, z_offset=self.z_offset) for p in positions_habitat
         ]
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
-        return hydra.Trajectory.from_positions(
+
+        poses = hydra.Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
+        # pos_traj = np.array([v[1] for v in poses])
+
+        return poses
 
     def get_rotate_in_place_trajectory(
         self, 
-        G=None, 
-        inflation_radius=0.1, 
-        threshold=1.0e-3,
         seed=None,
-        z_offset=0.5
     ):
-
-        if G is None:
-            G = self.get_navgraph(inflation_radius=inflation_radius, threshold=threshold)
         
         if seed is not None:
             np.random.seed(seed)
             
-        start = np.random.choice([x for x in G])
-        start_pos_habitat = G.nodes[start]["pos"]
+        start = np.random.choice([x for x in self.G])
+        start_pos_habitat = self.G.nodes[start]["pos"]
 
-        position_camera = _camera_point_from_habitat(start_pos_habitat, z_offset=z_offset)
+        position_camera = _camera_point_from_habitat(start_pos_habitat, z_offset=self.z_offset)
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
 
         return hydra.Trajectory.rotate(
             np.array(position_camera), body_R_camera=b_R_c
         )
-
 
     def set_pose(self, timestamp, world_T_camera):
         """Set pose of the agent directly."""
@@ -526,6 +502,15 @@ class HabitatInterface:
         self._obs = self._sim.get_sensor_observations()
         self._labels = None
 
+    def get_state(self):
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        agent_state = agent.get_state().position
+
+        bw_R_bh = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
+        p_bw = np.squeeze(bw_R_bh @ agent_state.reshape((3, 1)))
+
+        return p_bw
+    
     @property
     def colormap(self):
         """Get colormap between labels and semantic colors."""
