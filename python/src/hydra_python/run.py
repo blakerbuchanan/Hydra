@@ -28,6 +28,77 @@ class ImageVisualizer:
         else:
             self._view.setImage(image, **kwargs)
 
+def hydra_get_mesh(pipeline):
+    vertices = pipeline.graph.mesh.get_vertices()
+    faces = pipeline.graph.mesh.get_faces()
+
+    mesh_vertices = vertices[:3, :].T
+    mesh_triangles = faces.T
+    mesh_colors = vertices[3:, :].T
+
+    return mesh_vertices, mesh_colors, mesh_triangles
+
+def hydra_get_object_place_nodes(pipeline):
+
+    place_node_positions = []
+    frontier_node_positions = []
+    room_node_positions = []
+    building_node_positions = []
+
+    object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
+
+    for node in pipeline.graph.nodes:
+        if 'p' in node.id.category.lower():
+            place_node_positions.append(node.attributes.position)
+        if 'f' in node.id.category.lower():
+            frontier_node_positions.append(node.attributes.position)
+        if 'o' in node.id.category.lower():
+            object_node_positions.append(node.attributes.position)
+
+            # log the bounding boxes
+            bbox = node.attributes.bounding_box
+
+            bb_half_sizes.append(0.5 * bbox.dimensions)
+            bb_centroids.append(bbox.world_P_center)
+            bb_mat3x3.append(bbox.world_R_center)
+            bb_labels.append(node.attributes.name)
+            bb_colors.append(node.attributes.color)
+
+        if 'r' in node.id.category.lower():
+            room_node_positions.append(node.attributes.position)
+        if 'b' in node.id.category.lower():
+            building_node_positions.append(node.attributes.position)
+
+    node_info = {
+        'place_node_positions': place_node_positions,
+        'frontier_node_positions': frontier_node_positions,
+        'room_node_positions': room_node_positions,
+        'building_node_positions': building_node_positions,
+        'object_node_info': {
+            'object_node_positions': object_node_positions,
+            'bb_half_sizes': bb_half_sizes,
+            'bb_centroids': bb_centroids,
+            'bb_mat3x3': bb_mat3x3,
+            'bb_labels': bb_labels,
+            'bb_colors': bb_colors,
+        }
+
+    }
+    return node_info
+
+def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
+    if len(frontier_node_positions)>0:
+        frontier_nodes_z = np.array(frontier_node_positions)[:,2]
+        inplace_idxs = is_in_plane_frontier(frontier_nodes_z, agent_pos[2])
+        inplane_frontier_node_positions = np.array(frontier_node_positions)[inplace_idxs]
+        return inplane_frontier_node_positions
+    else:
+        return []
+
+def is_in_plane_frontier(frontier_nodes_z, agent_pos_z):
+    thresh_low = agent_pos_z - 0.3
+    thresh_high = agent_pos_z + 0.3
+    return np.logical_and((frontier_nodes_z < thresh_high), (frontier_nodes_z > thresh_low))
 
 def hydra_output_callback(pipeline, visualizer):
     """Show graph."""
@@ -62,41 +133,10 @@ def run(
     step_callback=hydra_output_callback,
     output_path=None,
     suffix=' ',
+    rr_logger=None,
 ):
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
-
-    # Initialize Rerun and specify the .rrd file for logging
-    full_output_path = "habitat_data.rrd"
-    rr.init("example_rgb_image_logging")
-    rr.save(full_output_path)
-
-    primary_camera_entity = "world/camera_lowres"
-
-    # Define a blueprint with an image space for logging the RGB image data
-    blueprint = rrb.Horizontal(
-        rrb.Vertical(
-            rrb.Spatial3DView(name="3D"),
-            rrb.TextDocumentView(name="PlannerOutput"),
-            ),
-        # Note that we re-project the annotations into the 2D views:
-        # For this to work, the origin of the 2D views has to be a pinhole camera,
-        # this way the viewer knows how to project the 3D annotations into the 2D views.
-        rrb.Vertical(
-            rrb.Spatial2DView(
-                name="RGB",
-                origin=primary_camera_entity,
-                contents=["$origin/rgb", "/world/annotations/**"],
-            ),
-            rrb.Spatial2DView(
-                    name="Semantic Labels",
-                    origin=primary_camera_entity,
-                    contents=["$origin/semantic", "/world/annotations/**"],
-            ),
-            )
-    )
-
-    rr.send_blueprint(blueprint)
 
     imgs_colormap, imgs_rgb, imgs_labels = [], [], []
 
@@ -120,109 +160,22 @@ def run(
             imgs_labels.append(data.labels)
             imgs_rgb.append(data.rgb)
 
-            # BEGIN RERUN LOGGING
-            # log the camera transform, rgb image, and depth image
-            # rr.log("world/camera_lowres", rr.Transform3D(transform=camera_from_world))
-            # rr.log("world/camera_lowres", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
-            rr.log(f"{primary_camera_entity}/rgb", rr.Image(data.rgb).compress(jpeg_quality=95))
-            rr.log(f"{primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
-
             agent_positions.append(data.get_state())
+            mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
+            node_info = hydra_get_object_place_nodes(pipeline)
+            inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
+            inplane_place_node_positions = get_in_plane_frontier_nodes(node_info['place_node_positions'], agent_positions[-1])
 
-            # log the agent trajectory
-            rr.log("world/trajectory", rr.LineStrips3D(agent_positions, colors=[0, 255, 0]))
-
-            vertices = pipeline.graph.mesh.get_vertices()
-            faces = pipeline.graph.mesh.get_faces()
-
-            mesh_vertices = vertices[:3, :].T
-            mesh_triangles = faces.T
-            mesh_colors = vertices[3:, :].T
-
-            # log the mesh data
-            vp, vc, ti = mesh_vertices, mesh_colors, mesh_triangles
-            rr.log(
-                "world/mesh",
-                rr.Mesh3D(
-                    vertex_positions=vp,
-                    vertex_colors=vc,
-                    triangle_indices=ti,
-                ),
-                timeless=False,
-            )
-
-            # log the text to the Planner Output window
-            rr.log(
-                "PlannerOutput",
-                rr.TextDocument(
-                    "this is the planner output",
-                    media_type=rr.MediaType.TEXT,
-                ),
-            )
-
-            ## ***Process pipeline.graph***
-            place_node_positions = []
-            active_frontier_place_node_positions = []
-            object_node_positions = []
-            room_node_positions = []
-            building_node_positions = []
-            n_object_nodes, n_place_nodes, n_frontier_nodes, n_agent_nodes, n_room_nodes, n_building_nodes = 0, 0, 0, 0, 0, 0
-
-            for node in pipeline.graph.nodes:
-                if 'p' in node.id.category.lower():
-                    # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Place: {node.attributes.active_frontier}")
-                    place_node_positions.append(node.attributes.position)
-                    n_place_nodes += 1
-                if 'f' in node.id.category.lower():
-                    # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
-                    active_frontier_place_node_positions.append(node.attributes.position)
-                    n_frontier_nodes += 1
-                if 'o' in node.id.category.lower():
-                    # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}.")
-                    object_node_positions.append(node.attributes.position)
-                    n_object_nodes += 1
-
-                    # log the bounding boxes
-                    bbox = node.attributes.bounding_box
-
-                    half_size = 0.5 * np.array(bbox.dimensions).reshape(-1, 3)[0]
-                    centroid = np.array(bbox.world_P_center).reshape(-1, 3)[0]
-                    mat3x3 = np.array(bbox.world_R_center).reshape(3, 3)
-                    label = node.attributes.name
-
-                    rr.log(
-                        f"world/annotations/box-{label}",
-                        rr.Boxes3D(
-                            half_sizes=half_size,
-                            centers=centroid,
-                            labels=label,
-                        ),
-                        rr.InstancePoses3D(mat3x3=mat3x3),
-                        timeless=False,
-                    )
-
-                if 'r' in node.id.category.lower():
-                    # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}.")
-                    room_node_positions.append(node.attributes.position)
-                    n_room_nodes += 1
-                if 'b' in node.id.category.lower():
-                    # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}.")
-                    building_node_positions.append(node.attributes.position)
-                    n_building_nodes += 1
-
-            place_node_positions = np.array(place_node_positions)
-            active_frontier_place_node_positions = np.array(active_frontier_place_node_positions)
-            object_node_positions = np.array(object_node_positions)
-            room_node_positions = np.array(room_node_positions)
-            building_node_positions = np.array(building_node_positions)
-
-            # log the frontier nodes with color red
-            rr.log(
-                "frontier_nodes",
-                rr.Points3D(active_frontier_place_node_positions, colors=[255, 0, 0], radii=0.08)
-            )
-
-            # END RERUN LOGGING
+            if rr_logger is not None:
+                rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
+                rr_logger.log_agent_data(agent_positions)
+                rr_logger.log_bb_data(node_info['object_node_info'])
+                rr_logger.log_frontier_data(node_info['frontier_node_positions'])
+                rr_logger.log_inplane_frontier_data(inplane_frontier_node_positions)
+                rr_logger.log_place_data(node_info['place_node_positions'])
+                rr_logger.log_inplane_place_data(inplane_place_node_positions)
+                rr_logger.log_img_data(data)
+                rr_logger.step()
 
             if step_callback:
                 step_callback(pipeline, visualizer)

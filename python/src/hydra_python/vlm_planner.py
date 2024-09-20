@@ -2,7 +2,7 @@ import json
 from enum import Enum
 from typing import Union
 from typing import List
-
+import time
 import hydra_python as hydra
 
 from openai import OpenAI
@@ -45,7 +45,7 @@ class VLMPLanner:
         self._history = ''
         self._t = 0
 
-        self._outputs_to_save = [f'Instruction: {self._instruction}']
+        self._outputs_to_save = [f'Instruction: {self._instruction}. \n ']
 
         self.sg_sim = hydra.SceneGraphSim(output_path, pipeline)
 
@@ -99,13 +99,23 @@ class VLMPLanner:
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
         Goto_visited_node_action, Goto_frontier_node_action = self.get_actions()
-        completion = client.beta.chat.completions.parse(
-            # model="gpt-4o-mini",
-            model="gpt-4o-2024-08-06",
-            messages=messages,
-            response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action),
-        )
 
+        succ=False
+        while not succ:
+            try:
+                start = time.time()
+                completion = client.beta.chat.completions.parse(
+                    # model="gpt-4o-mini",
+                    model="gpt-4o-2024-08-06",
+                    messages=messages,
+                    response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action),
+                )
+                print(f"Time taken for planning next step: {time.time()-start}s")
+                succ=True
+            except Exception as e:
+                print(f"An error occurred: {e}. Sleeping for 60s")
+                time.sleep(60)
+    
         plan = completion.choices[0].message
 
         # If the model refuses to respond, you will get a refusal message
@@ -114,20 +124,21 @@ class VLMPLanner:
             return None
         else:
             step = plan.parsed.steps[0]
-            print(step)
+            print(f'At t={self._t}: \n {step}')
 
             if 'done_with_task' in step.action.value:
                 self._done = True
                 target_pose = None
             else:
                 target_pose = self.sg_sim.get_position_from_id(step.action.value)
-            self._t += 1
+            
 
             # Saving outputs to file
-            self._outputs_to_save.append(f'Agent state: {agent_state} \n LLM output: {step}')
-            full_plan = ' '.join(self._outputs_to_save)
+            self._outputs_to_save.append(f'At t={self._t}: \n Agent state: {agent_state} \n LLM output: {step}. \n \n')
+            self.full_plan = ' '.join(self._outputs_to_save)
             with open(self._output_path / "llm_outputs.json", "w") as text_file:
-                text_file.write(full_plan)
+                text_file.write(self.full_plan)
 
+            self._t += 1
             return target_pose
         

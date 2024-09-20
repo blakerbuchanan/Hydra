@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import habitat_sim
 import pickle
 from itertools import chain
+from hydra_python import RRLogger
 
 
 def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
@@ -54,11 +55,14 @@ def _plot_sg_trajs(navmesh_nodes, poses, target_poses, pipeline, output_path, su
     active_frontier_place_node_positions = []
     object_node_positions = []
     for node in pipeline.graph.nodes:
+        z = node.attributes.position[2]
         if 'p' in node.id.category.lower():
             # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            # if z<1.0 and z>0.25:
             place_node_positions.append(node.attributes.position)
         if 'f' in node.id.category.lower():
             # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            # if z<1.0 and z>0.25:
             active_frontier_place_node_positions.append(node.attributes.position)
         if 'o' in node.id.category.lower():
             object_node_positions.append(node.attributes.position)
@@ -143,11 +147,14 @@ def run(
     """Run Hydra against a habitat scene."""
     from hydra_python._plugins import habitat
 
+    
     if 'hm3d' in scene_type:
         label_space = 'hm3d'
 
     hydra.set_glog_level(glog_level, verbosity)
     output_path = hydra.resolve_output_path(output_path, force=force)
+
+
     data = habitat.HabitatInterface(scene_path, scene_type=scene_type, inflation_radius=0.25, z_offset=0.5)
     poses = _get_trajectory(data, prev_dsg, seed, use_full_scene=use_full_scene)
 
@@ -178,6 +185,7 @@ def run(
         # TODO(nathan) make pathlib bindings
         hydra.set_glog_dir(str(glog_dir))
 
+    rr_logger = RRLogger(output_path)
     if visualize:
         visualizer = DsgVisualizer(start_remote=False)
         visualizer.update_graph(pipeline.graph)
@@ -194,6 +202,7 @@ def run(
             show_progress=show_progress,
             output_path=output_path,
             suffix='test',
+            rr_logger=rr_logger,
         )
     finally:
         pipeline.save()
@@ -394,6 +403,7 @@ def run_sg_planner(
         # TODO(nathan) make pathlib bindings
         hydra.set_glog_dir(str(glog_dir))
 
+    rr_logger = RRLogger(output_path)
     if visualize:
         visualizer = DsgVisualizer(start_remote=False)
         visualizer.update_graph(pipeline.graph)
@@ -424,6 +434,7 @@ def run_sg_planner(
         show_progress=show_progress,
         output_path=output_path,
         suffix=suffix,
+        rr_logger=rr_logger,
     )
 
     pos_traj = np.array([v[1] for v in poses])
@@ -433,12 +444,13 @@ def run_sg_planner(
     poses_to_plot = [v[1] for v in poses]
     _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
     _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
+
     
     # agent_state = data.get_state()
     # click.secho(f"Agent state: {agent_state}",fg="yellow",)
 
     # sg_sim = hydra.SceneGraphSim(output_path, pipeline)
-    # sg_sim.test_sg()
+    # # sg_sim.test_sg()
     
     # # Randomly sample a frontier node and goto it
     # active_frontier_place_node_positions = []
@@ -448,9 +460,10 @@ def run_sg_planner(
     
     # target_pose = random.choice(active_frontier_place_node_positions).copy()
     # target_pose[2] = agent_state[2]
-
+    # target_poses.append(target_pose)
+    
     # poses = data.get_trajectory_to_pose(agent_state, target_pose)
-
+    # suffix = 't_1'
     # hydra.run(
     #     pipeline,
     #     data,
@@ -458,20 +471,23 @@ def run_sg_planner(
     #     visualizer=visualizer,
     #     show_images=show_images,
     #     show_progress=show_progress,
+    #     output_path=output_path,
+    #     suffix=suffix,
     # )
 
     # sg_sim.update()
-    # sg_sim.test_sg()
-
-    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XY')
-    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XZ')
+    # # sg_sim.test_sg()
+    # poses_to_plot = [v[1] for v in poses]
+    # _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
+    # _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
     
-
     instr = 'Go to the kitchen.'
     planner = hydra.VLMPLanner(instr, output_path, pipeline)
     t=1
     while not planner.done:
         agent_state = data.get_state()
+
+        click.secho(f"Planning at step: {planner.t}",fg="blue",)
         target_pose = planner.get_next_action()
         if target_pose is not None:
             target_pose[2] = agent_state[2] # TODO(saumya): filter frontier nodes to only include nodes in agent place
@@ -479,6 +495,13 @@ def run_sg_planner(
 
             suffix = f't_{planner.t}'
             if poses is not None:
+                poses_to_plot.extend([v[1] for v in poses])
+                target_poses.append(target_pose)
+                rr_logger.log_traj_data(poses_to_plot)
+                rr_logger.log_target_poses(target_poses)
+                rr_logger.log_text_data(planner.full_plan)
+
+                click.secho(f"Executing trajectory: {planner.t}",fg="yellow",)
                 hydra.run(
                     pipeline,
                     data,
@@ -488,9 +511,9 @@ def run_sg_planner(
                     show_progress=show_progress,
                     output_path=output_path,
                     suffix=suffix,
+                    rr_logger=rr_logger,
                 )
-                poses_to_plot.extend([v[1] for v in poses])
-                target_poses.append(target_pose)
+                
                 _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
                 _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
                 t+=1

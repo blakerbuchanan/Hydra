@@ -3,11 +3,13 @@ import numpy as np
 import networkx as nx
 from networkx.readwrite import json_graph
 from itertools import chain
+from hydra_python import is_in_plane_frontier
 
 class SceneGraphSim:
     def __init__(self, sg_path, pipeline):
         self._sg_path = sg_path / "filtered_dsg.json"
         self.pipeline = pipeline
+        self.filter_out_objects = ['wall, floor', 'ceiling', 'door_frame']
         self.update()
     
     def _load_scene_graph(self):
@@ -30,23 +32,8 @@ class SceneGraphSim:
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
         self._visited_node_ids, self._frontier_node_ids = [], []
-        ## Adding nodes
-        for node in self.pipeline.graph.nodes:
-            attr={}
-            nodeid, node_type, node_name = self._get_node_properties(node)
-            attr['position'] = list(node.attributes.position)
-            attr['name'] = node_name
-            attr['layer'] = node.layer
-            if node.id.category.lower() in ['o', 'r', 'b']:
-                attr['label'] = node.attributes.semantic_label
-            
-            if 'p' in node.id.category.lower():
-                self._visited_node_ids.append(nodeid)
-            if 'f' in node.id.category.lower(): 
-                self._frontier_node_ids.append(nodeid)
 
-            self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-
+        ## Adding agent nodes
         agent_ids, agent_cat_ids = [], []
         for layer in self.pipeline.graph.dynamic_layers:
             for node in layer.nodes:
@@ -63,6 +50,30 @@ class SceneGraphSim:
                     self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
         self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
+        self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
+
+        ## Adding other nodes
+        for node in self.pipeline.graph.nodes:
+            attr={}
+            nodeid, node_type, node_name = self._get_node_properties(node)
+            attr['position'] = list(node.attributes.position)
+            attr['name'] = node_name
+            attr['layer'] = node.layer
+            if node.id.category.lower() in ['o', 'r', 'b']:
+                attr['label'] = node.attributes.semantic_label
+            
+            if 'o' in node.id.category.lower():
+                if node_name in self.filter_out_objects:
+                    continue
+            
+            if 'p' in node.id.category.lower():
+                self._visited_node_ids.append(nodeid)
+                if is_in_plane_frontier(attr['position'][2], self.curr_agent_pos[2]):
+                    self._visited_node_ids.append(nodeid)
+            if 'f' in node.id.category.lower():
+                if is_in_plane_frontier(attr['position'][2], self.curr_agent_pos[2]):
+                    self._frontier_node_ids.append(nodeid)
+            self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
 
         ## Adding edges
         for edge in chain(self.pipeline.graph.edges, self.pipeline.graph.dynamic_interlayer_edges):
@@ -71,6 +82,15 @@ class SceneGraphSim:
 
             target_node = node = self.pipeline.graph.get_node(edge.target)
             targetid, target_type, target_name = self._get_node_properties(target_node)
+            if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
+                continue
+            
+            if 'object' in source_type and 'object' in target_type:
+                continue
+            if 'visited' in source_type and 'visited' in target_type:
+                continue
+            if 'frontier' in source_type and 'frontier' in target_type:
+                continue
 
             self.filtered_netx_graph.add_edges_from([(
                 sourceid, targetid,
