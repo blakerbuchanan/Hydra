@@ -3,13 +3,14 @@ import numpy as np
 import networkx as nx
 from networkx.readwrite import json_graph
 from itertools import chain
-from hydra_python import is_in_plane_frontier
+from hydra_python import is_relevant_frontier
 
 class SceneGraphSim:
-    def __init__(self, sg_path, pipeline):
+    def __init__(self, sg_path, pipeline, rr_logger):
         self._sg_path = sg_path / "filtered_dsg.json"
         self.pipeline = pipeline
         self.filter_out_objects = ['wall, floor', 'ceiling', 'door_frame']
+        self.rr_logger = rr_logger
         self.update()
     
     def _load_scene_graph(self):
@@ -31,8 +32,9 @@ class SceneGraphSim:
 
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
-        self._visited_node_ids, self._frontier_node_ids = [], []
+        self.navmesh_netx_graph = nx.Graph()
 
+        self._visited_node_ids, self._frontier_node_ids = [], []
         ## Adding agent nodes
         agent_ids, agent_cat_ids = [], []
         for layer in self.pipeline.graph.dynamic_layers:
@@ -48,7 +50,7 @@ class SceneGraphSim:
                     attr['layer'] = node.layer
                     attr['timestamp'] = float(node.timestamp/1e8)
                     self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-        
+                    self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
         self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
         self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
 
@@ -59,32 +61,50 @@ class SceneGraphSim:
             attr['position'] = list(node.attributes.position)
             attr['name'] = node_name
             attr['layer'] = node.layer
+
+            self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
+
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
             
+            # Filtering
             if 'o' in node.id.category.lower():
                 if node_name in self.filter_out_objects:
                     continue
-            
             if 'p' in node.id.category.lower():
                 self._visited_node_ids.append(nodeid)
-                if is_in_plane_frontier(attr['position'][2], self.curr_agent_pos[2]):
-                    self._visited_node_ids.append(nodeid)
+                self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
             if 'f' in node.id.category.lower():
-                if is_in_plane_frontier(attr['position'][2], self.curr_agent_pos[2]):
+                self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
+                if is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
                     self._frontier_node_ids.append(nodeid)
+
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
 
         ## Adding edges
         for edge in chain(self.pipeline.graph.edges, self.pipeline.graph.dynamic_interlayer_edges):
-            source_node = node = self.pipeline.graph.get_node(edge.source)
+            source_node = self.pipeline.graph.get_node(edge.source)
             sourceid, source_type, source_name = self._get_node_properties(source_node)
-
-            target_node = node = self.pipeline.graph.get_node(edge.target)
+            
+            target_node = self.pipeline.graph.get_node(edge.target)
             targetid, target_type, target_name = self._get_node_properties(target_node)
+            edge_type = f'{source_type}-to-{target_type}'
+            edgeid = f'{sourceid}-to-{targetid}'
+
+            self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
+
+            if ('visited' in source_type) and ('visited' in target_type or 'frontier' in target_type):
+                self.navmesh_netx_graph.add_edges_from([(
+                    sourceid, targetid,
+                    {'source_name': source_name,
+                    'target_name': target_name,
+                    'type': edge_type,
+                    'weight': np.linalg.norm(source_node.attributes.position-target_node.attributes.position)}
+                )])
+
+            # Filtering scene graph
             if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
                 continue
-            
             if 'object' in source_type and 'object' in target_type:
                 continue
             if 'visited' in source_type and 'visited' in target_type:
@@ -96,9 +116,8 @@ class SceneGraphSim:
                 sourceid, targetid,
                 {'source_name': source_name,
                 'target_name': target_name,
-                'type': f'{source_type}-to-{target_type}'}
+                'type': edge_type}
             )])
-        
         self.current_room = [n for n in self.filtered_netx_graph.predecessors(self.curr_agent_id) if 'room' in n]
 
     def _get_node_properties(self, node):
@@ -197,6 +216,13 @@ class SceneGraphSim:
         print(f"Total json nodes: {len(self.netx_sg.nodes)}")
 
         # ***********TEST EDGES***********
+        """ 
+            GRAPH.LAYERS.EDGES:
+            layer 3 edges: Place->Frontier, Place->Place # included in graph.edges
+            layer 4 edges: 
+            layer 5 egdes: 
+            layer 20 edges: 
+        """
         for layer in self.pipeline.graph.layers:
             n_edges = 0
             for edge in layer.edges:
@@ -205,6 +231,10 @@ class SceneGraphSim:
             print(f"Edges in layer {layer.id}: {n_edges}")
 
         ## These are agent to agent edges (not needed)
+        """
+            GRAPH.DYNAMIC_LAYERS.EDGES:
+            layer 2 edges: Agent->Agent
+        """
         for layer in self.pipeline.graph.dynamic_layers:
             n_edges = 0
             for edge in layer.edges:
@@ -212,6 +242,13 @@ class SceneGraphSim:
                 n_edges+=1
             print(f"Edges in dynamic layer {layer.id}: {n_edges}")
 
+        """
+            GRAPH.EDGES:
+            Building->Room
+            Room->Place
+            Place->Object
+            Place->Frontier, Place->Place
+        """
         n_edges, n_edges_interL, n_edges_dyn_interL = 0, 0, 0
         for edge in self.pipeline.graph.edges:
             print("Graph edge", edge)
@@ -219,11 +256,21 @@ class SceneGraphSim:
         print(f"Edges in graph: {n_edges}")
 
         ## these are already included in graph.edges
+        """
+            GRAPH.INTERLAYER_EDGES:
+            Building->Room
+            Room->Place
+            Place->Object # Included in graph.edges
+        """
         for edge in self.pipeline.graph.interlayer_edges:
             print("interlayer edges", edge)
             n_edges_interL+=1
         print(f"Edges in interlayers: {n_edges_interL}")
 
+        """
+            GRAPH.DYNAMIC_INTERLAYER_EDGES:
+            Place->Agent
+        """
         for edge in self.pipeline.graph.dynamic_interlayer_edges:
             print("dynamic interlayer edges", edge)
             n_edges_dyn_interL+=1
@@ -245,7 +292,32 @@ class SceneGraphSim:
     
     def update(self):
         self._load_scene_graph()
+        # self.test_sg()
         self._build_sg_from_hydra_graph()
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])
+
+    def get_trajectory_to_node(self, agent_pos, agent_quat_wxyz, target_pos):
+        """Get a trajectory from target_pos in navgraph G.
+        Agent pos and rotation are in world frame.
+        target_pos is taken from the hydra scenegraph"""
+
+        # Find closest node on graph
+        node_sequence = [x for x in self.G]
+        pos_nodes = np.array([self.navmesh_netx_graph.nodes[x]["position"] for x in self.navmesh_netx_graph]).squeeze()
+
+        start_idx = np.argmin(np.linalg.norm(pos_nodes - agent_pos, axis=-1))
+        end_idx = np.argmin(np.linalg.norm(pos_nodes - target_pos, axis=-1))
+
+        nodes = nx.shortest_path(self.navmesh_netx_graph, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
+
+        positions_camera = [self.navmesh_netx_graph.nodes[x]["position"] for x in nodes]
+        
+        if len(positions_camera) < 2:
+            return None
+        
+        b_R_c = R.from_quat(agent_quat_wxyz).as_matrix()
+        poses = hydra.Trajectory.from_positions(
+            np.array(positions_camera), body_R_camera=b_R_c
+        )

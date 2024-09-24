@@ -12,6 +12,7 @@ import random
 import os
 import yaml
 
+from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -74,19 +75,19 @@ def _build_navgraph(sim, pathfinder, settings, threshold):
     return G.subgraph(largest_cc)
 
 
-def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, z_offset=0.0):
+def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, camera_height=0.0):
     spec = habitat_sim.CameraSensorSpec()
     spec.uuid = str(sensor_type)
     spec.sensor_type = sensor_type
     spec.resolution = [height, width]
-    spec.position = [0.0, z_offset, 0.0]
+    spec.position = [0.0, camera_height, 0.0]
     spec.orientation = [0.0, 0.0, 0.0]
     spec.hfov = hfov
     spec.sensor_subtype = habitat_sim.SensorSubType.PINHOLE
     return spec
 
 
-def _make_habitat_config(scene, scene_type='mp3d', z_offset=0.0, agent_radius=0.1):
+def _make_habitat_config(scene, scene_type='mp3d', camera_height=0.0, width=640, height=360, agent_z_offset=0.0, agent_radius=0.1, hfov=90.0):
     sim_cfg = habitat_sim.SimulatorConfiguration()
     path = scene.parent.parent
     if scene_type=='mp3d':
@@ -103,7 +104,7 @@ def _make_habitat_config(scene, scene_type='mp3d', z_offset=0.0, agent_radius=0.
     sim_cfg.allow_sliding = False
 
     sensor_specs = [
-        _make_sensor(x, z_offset=z_offset)
+        _make_sensor(x, camera_height=camera_height, width=width, height=height, hfov=hfov)
         for x in [
             habitat_sim.SensorType.COLOR,
             habitat_sim.SensorType.DEPTH,
@@ -124,7 +125,7 @@ def _make_habitat_config(scene, scene_type='mp3d', z_offset=0.0, agent_radius=0.
     }
 
     agent_cfg = habitat_sim.agent.AgentConfiguration(
-        height=z_offset,
+        height=agent_z_offset,
         radius=agent_radius,
         sensor_specifications=sensor_specs,
         action_space={},
@@ -156,9 +157,10 @@ def _transform_from_habitat(h_q_c, p_h):
     w_R_h = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
     p_w = np.squeeze(w_R_h @ p_h.reshape((3, 1)))
 
+    # R.from_quat expects xyzw order by default
     h_R_c = R.from_quat(h_q_c).as_matrix()
     w_R_c = w_R_h @ h_R_c @ w_R_h.T
-    w_q_c = R.from_matrix(w_R_c).as_quat()
+    w_q_c = R.from_matrix(w_R_c).as_quat() # returns xyzw format
     return w_q_c, p_w
 
 
@@ -180,6 +182,14 @@ def _transform_to_body(w_q_c, p_c):
     # note that b_T_c doesn't have translation...
     return w_q_b, p_c
 
+def _transform_from_body(w_q_c, p_c):
+    b_R_c = np.array([[0, -1, 0], [0, 0, -1], [1, 0, 0]])
+    w_R_c = R.from_quat(w_q_c).as_matrix()
+    w_R_b = w_R_c @ b_R_c.T
+    w_q_b = R.from_matrix(w_R_b).as_quat()
+    # note that b_T_c doesn't have translation...
+    return w_q_b, p_c
+
 
 def _camera_point_from_habitat(p_ah, z_offset=1.5):
     p_bh = np.array(p_ah)
@@ -190,12 +200,28 @@ def _camera_point_from_habitat(p_ah, z_offset=1.5):
 
     return p_bw
 
+def _habitat_to_world_eqa(p_h):
+    bw_R_bh = np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]])
+    # bw_R_bh = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
+    # p_w = np.squeeze(bw_R_bh @ p_h.reshape((3, 1)))
+    quat_xyzw, pos = _transform_from_habitat(R.from_matrix(bw_R_bh).as_quat(), np.array(p_h))
+    quat_xyzw_normal, pos_normal = _transform_from_body(quat_xyzw, pos)
+    return pos_normal
+
 def _camera_point_to_habitat(p_camera, z_offset=1.5):
     p_habitat = p_camera.copy()
     p_habitat[2] -= z_offset
     bw_R_c = np.array([[0, -1, 0], [0, 0, 1], [-1, 0, 0]])
     p_habitat = np.squeeze(bw_R_c @ p_habitat.reshape((3, 1)))
     return p_habitat
+
+def _angle_to_rotation_habitat(angle, camera_tilt_deg):
+    camera_tilt = camera_tilt_deg * np.pi / 180
+    rotation_xyzw = quat_to_coeffs(
+            quat_from_angle_axis(angle, np.array([0, 1, 0]))
+            * quat_from_angle_axis(camera_tilt, np.array([1, 0, 0]))
+        ).tolist()
+    return rotation_xyzw
 
 def _format_list(name, values, collapse=True, **kwargs):
     indent = kwargs.get("indent", 0)
@@ -218,7 +244,13 @@ class HabitatInterface:
             scene: Union[str, pathlib.Path], 
             scene_type: str='mp3d',
             inflation_radius=0.25,
+            camera_height=0.0, 
+            width=640, 
+            height=360,
+            agent_z_offset=0.0,
+            hfov=90.0,
             z_offset=0.5):
+        
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
         self._scene_type = scene_type
@@ -227,7 +259,15 @@ class HabitatInterface:
 
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
-        config, camera_info = _make_habitat_config(scene, scene_type=scene_type)
+        config, camera_info = _make_habitat_config(
+            scene, 
+            scene_type=scene_type, 
+            camera_height=camera_height,
+            width=width, 
+            height=height,
+            agent_z_offset=agent_z_offset, 
+            agent_radius=0.1, 
+            hfov=hfov)
         self._house_path = scene.parent / f"{scene.stem}.house"
         self._camera_info = camera_info
         
@@ -321,10 +361,10 @@ class HabitatInterface:
                 fout.write("  - " + yaml.dump(name, default_flow_style=True))
 
     def _make_navgraph(self, inflation_radius=0.1, threshold=1.0e-3):
-        pathfinder = habitat_sim.nav.PathFinder()
+        self.pathfinder = habitat_sim.nav.PathFinder()
         settings = habitat_sim.NavMeshSettings()
         settings.agent_radius = inflation_radius
-        self.G = _build_navgraph(self._sim, pathfinder, settings, threshold)
+        self.G = _build_navgraph(self._sim, self.pathfinder, settings, threshold)
     
     def get_full_trajectory(
         self,
@@ -348,7 +388,7 @@ class HabitatInterface:
             best_node = None
             best_distance = None
             for x in components[0]:
-                pos = _camera_point_from_habitat(G.nodes[x]["pos"], z_offset=self.z_offset)
+                pos = _camera_point_from_habitat(self.G.nodes[x]["pos"], z_offset=self.z_offset)
                 dist = np.linalg.norm(pos - room.centroid)
                 if not best_distance or dist < best_distance:
                     best_node = x
@@ -467,10 +507,96 @@ class HabitatInterface:
         poses = hydra.Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
-        # pos_traj = np.array([v[1] for v in poses])
+        return poses
+    
+    def get_trajectory_to_pose_habitat_eqa(self, target_pos):
+        """Get a trajectory from target_pos in navgraph G.
+        target_pos is taken from the hydra scenegraph"""
 
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+        current_quat_wxyz = agent.get_state().rotation
+
+        end_habitat = _camera_point_to_habitat(target_pos, z_offset=self.z_offset)
+
+        # Find closest node on graph
+        node_sequence = [x for x in self.G]
+        pos_nodes = np.array([self.G.nodes[x]["pos"] for x in self.G]).squeeze()
+
+        start_idx = np.argmin(np.linalg.norm(pos_nodes - current_pos, axis=-1))
+        end_idx = np.argmin(np.linalg.norm(pos_nodes - end_habitat, axis=-1))
+
+        nodes = nx.shortest_path(self.G, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
+
+        positions_habitat = [self.G.nodes[x]["pos"] for x in nodes]
+        
+        if len(positions_habitat) < 2:
+            return None
+
+        positions_camera = [
+            _camera_point_from_habitat(p, z_offset=self.z_offset) for p in positions_habitat
+        ]
+
+        quat_xyzw, pos = _transform_from_habitat(quat_to_coeffs(current_quat_wxyz), np.array(current_pos))
+        quat_xyzw_normal, pos_normal = _transform_from_body(quat_xyzw, pos)
+
+        b_R_c = R.from_quat(quat_xyzw_normal).as_matrix()
+        poses = hydra.Trajectory.from_positions(
+            np.array(positions_camera), body_R_camera=b_R_c
+        )
         return poses
 
+    def get_trajectory_to_pose_world_eqa(self, target_pos, navmesh_sg):
+        """Get a trajectory from target_pos in navgraph G.
+        target_pos is taken from the hydra scenegraph"""
+
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+        current_quat_wxyz = agent.get_state().rotation
+
+        quat_xyzw, pos = _transform_from_habitat(quat_to_coeffs(current_quat_wxyz), np.array(current_pos))
+        current_quat_xyzw, current_pos = _transform_from_body(quat_xyzw, pos)
+        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+
+        # Find closest node on graph
+        node_sequence = [x for x in navmesh_sg]
+        pos_nodes = np.array([navmesh_sg.nodes[x]["position"] for x in navmesh_sg]).squeeze()
+
+        start_idx = np.argmin(np.linalg.norm(pos_nodes - current_pos, axis=-1))
+        end_idx = np.argmin(np.linalg.norm(pos_nodes - target_pos, axis=-1))
+
+        nodes = nx.shortest_path(navmesh_sg, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
+
+        positions_camera = np.array([navmesh_sg.nodes[x]["position"] for x in nodes])
+        positions_camera[:,2] = current_pos[2] # project to agent plane
+        
+        if positions_camera.shape[0] < 2:
+            return None
+
+        b_R_c = R.from_quat(current_quat_wxyz).as_matrix()
+        poses = hydra.Trajectory.from_positions(
+            np.array(positions_camera), body_R_camera=b_R_c
+        )
+        return poses
+
+    def get_init_poses_eqa(self, pos_hab, angle, camera_tilt_deg):
+        # pose is in habitat frame, return (pose, quat_wxyz)
+        quat_hab_xyzw = _angle_to_rotation_habitat(angle, camera_tilt_deg)
+
+        quat_xyzw, pos = _transform_from_habitat(np.array(quat_hab_xyzw), np.array(pos_hab))
+        # quat_xyzw_re, pos_re = _transform_to_habitat(quat_xyzw, pos) # testing
+
+        quat_xyzw_normal, pos_normal = _transform_from_body(quat_xyzw, pos)
+        # quat_xyzw_normal_re, pos_normal_re = _transform_to_body(quat_xyzw_normal, pos_normal) #testing
+
+        quat_wxyz_normal = np.roll(quat_xyzw_normal, 1)
+
+        poses = []
+        dt = 0.2
+        for i in range(10):
+            poses.append((int(i*dt*1e9), pos_normal, quat_wxyz_normal))
+        return poses
+    
     def get_rotate_in_place_trajectory(
         self, 
         seed=None,
@@ -501,6 +627,14 @@ class HabitatInterface:
         self._sim.agents[0].set_state(new_state)
         self._obs = self._sim.get_sensor_observations()
         self._labels = None
+    
+    def set_pose_habitat(self, pos, quat):
+        new_state = habitat_sim.AgentState()
+        new_state.position = magnum.Vector3(pos[0], pos[1], pos[2])
+        new_state.rotation = quat
+        self._sim.agents[0].set_state(new_state)
+        self._obs = self._sim.get_sensor_observations()
+        self._labels = None
 
     def get_state(self):
         agent = self._sim.get_agent(0)  # Assuming agent ID 0
@@ -508,9 +642,17 @@ class HabitatInterface:
 
         bw_R_bh = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
         p_bw = np.squeeze(bw_R_bh @ agent_state.reshape((3, 1)))
-
         return p_bw
-    
+
+    def get_scene_size(self):
+        scene_bnds = self.pathfinder.get_bounds()
+        scene_lower_bnds_normal = pos_habitat_to_normal(scene_bnds[0])
+        scene_upper_bnds_normal = pos_habitat_to_normal(scene_bnds[1])
+        scene_size = np.abs(
+            np.prod(scene_upper_bnds_normal[:2] - scene_lower_bnds_normal[:2])
+        )
+        return scene_size
+
     @property
     def colormap(self):
         """Get colormap between labels and semantic colors."""

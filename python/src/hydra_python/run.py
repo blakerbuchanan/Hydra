@@ -88,27 +88,28 @@ def hydra_get_object_place_nodes(pipeline):
 
 def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
     if len(frontier_node_positions)>0:
-        frontier_nodes_z = np.array(frontier_node_positions)[:,2]
-        inplace_idxs = is_in_plane_frontier(frontier_nodes_z, agent_pos[2])
+        inplace_idxs = is_relevant_frontier(np.array(frontier_node_positions), agent_pos)
         inplane_frontier_node_positions = np.array(frontier_node_positions)[inplace_idxs]
         return inplane_frontier_node_positions
     else:
         return []
 
-def is_in_plane_frontier(frontier_nodes_z, agent_pos_z):
-    thresh_low = agent_pos_z - 0.3
-    thresh_high = agent_pos_z + 0.3
-    return np.logical_and((frontier_nodes_z < thresh_high), (frontier_nodes_z > thresh_low))
+def is_relevant_frontier(frontier_node_positions, agent_pos):
+    frontier_node_positions = frontier_node_positions.reshape(-1,3)
+    thresh_low = agent_pos[2] - 0.3
+    thresh_high = agent_pos[2] + 0.3
+    in_plane = np.logical_and((frontier_node_positions[:,2] < thresh_high), (frontier_node_positions[:,2] > thresh_low))
+    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 3.0
+    return np.logical_and(in_plane, nearby)
 
 def hydra_output_callback(pipeline, visualizer):
     """Show graph."""
     if visualizer:
         visualizer.update_graph(pipeline.graph)
 
-
 def _take_step(pipeline, data, pose, segmenter, image_viz):
     timestamp, world_t_body, q_wxyz = pose
-    q_xyzw = np.roll(q_wxyz, -1)
+    q_xyzw = np.roll(q_wxyz, -1) #changing to xyzw format
 
     world_T_body = np.eye(4)
     world_T_body[:3, 3] = world_t_body
@@ -140,7 +141,7 @@ def run(
 
     imgs_colormap, imgs_rgb, imgs_labels = [], [], []
 
-    agent_positions = []
+    # agent_positions = []
     if show_progress:
         with click.progressbar(pose_source) as bar:
             for pose in bar:
@@ -160,20 +161,20 @@ def run(
             imgs_labels.append(data.labels)
             imgs_rgb.append(data.rgb)
 
-            agent_positions.append(data.get_state())
+            # agent_positions.append(data.get_state())
             mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
-            node_info = hydra_get_object_place_nodes(pipeline)
-            inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
-            inplane_place_node_positions = get_in_plane_frontier_nodes(node_info['place_node_positions'], agent_positions[-1])
+            # node_info = hydra_get_object_place_nodes(pipeline)
+            # inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
+            # inplane_place_node_positions = get_in_plane_frontier_nodes(node_info['place_node_positions'], agent_positions[-1])
 
             if rr_logger is not None:
                 rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
-                rr_logger.log_agent_data(agent_positions)
-                rr_logger.log_bb_data(node_info['object_node_info'])
-                rr_logger.log_frontier_data(node_info['frontier_node_positions'])
-                rr_logger.log_inplane_frontier_data(inplane_frontier_node_positions)
-                rr_logger.log_place_data(node_info['place_node_positions'])
-                rr_logger.log_inplane_place_data(inplane_place_node_positions)
+                # rr_logger.log_agent_data(agent_positions)
+                # rr_logger.log_bb_data(node_info['object_node_info'])
+                # rr_logger.log_frontier_data(node_info['frontier_node_positions'])
+                # rr_logger.log_inplane_frontier_data(inplane_frontier_node_positions)
+                # rr_logger.log_place_data(node_info['place_node_positions'])
+                # rr_logger.log_inplane_place_data(inplane_place_node_positions)
                 rr_logger.log_img_data(data)
                 rr_logger.step()
 

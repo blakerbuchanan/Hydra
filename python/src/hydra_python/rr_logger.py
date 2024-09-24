@@ -1,5 +1,6 @@
 import rerun as rr
 import rerun.blueprint as rrb
+import numpy as np
 
 class RRLogger:
     def __init__(self, output_path):
@@ -36,6 +37,23 @@ class RRLogger:
         )
 
         rr.send_blueprint(blueprint)
+
+        self._node_color_map = {
+            'object': [225,225,0],
+            'frontier': [255,0,0],
+            'visited': [0,0,0],
+            'room': [255,0,255],
+            'building': [0,255,255],
+            'agent': [0,0,255],
+        }
+        self._edge_color_map = {
+            'building-to-room': [225,0,0],
+            'room-to-visited': [0,255,0],
+            'visited-to-object': [0,0,255],
+            'visited-to-frontier': [255,255,255],
+            'visited-to-visited': [0,0,0],
+            'visited-to-agent': [255,255,0],
+        }
         self.reset()
 
     def reset(self):
@@ -56,11 +74,19 @@ class RRLogger:
         )
     
     def log_agent_data(self, agent_positions):
-        rr.log("world/robot_traj", rr.LineStrips3D(agent_positions, colors=[0, 0, 255]))
-        rr.log("world/robot", rr.Points3D(agent_positions[-1], colors=[0, 0, 255], radii=0.11))
+        rr.log(f"world/robot_traj", rr.LineStrips3D(agent_positions, colors=[0, 0, 255]))
+        rr.log(f"{self.primary_agent_entity}/robot_pos", rr.Points3D(agent_positions[-1], colors=[0, 0, 255], radii=0.11))
 
     def log_traj_data(self, agent_positions):
         rr.log("world/desired_traj", rr.LineStrips3D(agent_positions, colors=[0, 255, 255]))
+    
+    def log_agent_tf(self, pos, quat):
+        translation = np.asarray([pos[0], pos[1], pos[2]])
+        quat_mod = np.asarray([quat[1], quat[2], quat[3], quat[0]])
+        agent_from_world = rr.Transform3D(
+            translation=translation, rotation=rr.Quaternion(xyzw=quat_mod), from_parent=False
+        )
+        rr.log(f"{self.primary_agent_entity}", agent_from_world)
 
     def log_target_poses(self, target_poses):
         rr.log("world/target_poses", rr.Points3D(target_poses, colors=[0,255,0], radii=0.11))
@@ -72,6 +98,13 @@ class RRLogger:
                 text,
                 media_type=rr.MediaType.TEXT,
             ),
+        )
+
+    def log_navmesh_data(self, navmesh):
+        # log the frontier nodes with color red
+        rr.log(
+            f"world/navmesh_nodes",
+            rr.Points3D(navmesh, colors=[255,255,255], radii=0.11)
         )
 
     def log_frontier_data(self, frontier_node_positions):
@@ -104,7 +137,7 @@ class RRLogger:
 
     def log_bb_data(self, bb_info):
         rr.log(
-            "world/bb",
+            "/world/annotations/bb",
             rr.Boxes3D(
                 half_sizes=bb_info['bb_half_sizes'],
                 centers=bb_info['bb_centroids'],
@@ -121,6 +154,19 @@ class RRLogger:
         # rr.log("world/agent", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
         rr.log(f"{self.primary_agent_entity}/rgb", rr.Image(data.rgb).compress(jpeg_quality=95))
         rr.log(f"{self.primary_agent_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
+
+    def log_hydra_graph(self, is_node=True, node_type='object', nodeid=None, edgeid=None, edge_type='room_to_place', node_pos_source=None, node_pos_target=None):
+        if is_node:
+            rr.log(
+                f"world/hydra_graph/nodes/{node_type}/{nodeid}",
+                rr.Points3D(node_pos_source, colors=self._node_color_map[node_type], radii=0.09)
+            )
+        else: # edge
+            rr.log(f"world/hydra_graph/edges/{edge_type}/{edgeid}", rr.Arrows3D(
+                origins=node_pos_source,  # Base position of the arrow
+                vectors=(node_pos_target-node_pos_source),  # Direction and length of the arrow
+                colors=self._edge_color_map[edge_type]
+            ))
 
     def step(self):
         self._t += self._dt
