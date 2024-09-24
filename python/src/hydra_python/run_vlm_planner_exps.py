@@ -77,13 +77,13 @@ def initialize_hydra_pipeline(cfg, habitat_data, output_path):
     
     return pipeline
 
-def log_traj_data(rr_logger, poses, target_pose, poses_to_plot, orientations_to_plot, target_poses):
+def log_traj_data_target_pose(rr_logger, poses, target_pose, poses_to_plot, orientations_to_plot, target_poses):
     poses_to_plot.extend([v[1] for v in poses])
     orientations_to_plot.extend([v[2] for v in poses])
     target_poses.append(target_pose)
 
-    for i in range(len(poses_to_plot)):
-        rr_logger.log_agent_tf(poses_to_plot[i], orientations_to_plot[i])
+    # for i in range(len(poses_to_plot)):
+    #     rr_logger.log_agent_tf(poses_to_plot[i], orientations_to_plot[i])
     rr_logger.log_traj_data(poses_to_plot)
     rr_logger.log_target_poses(target_poses)
 
@@ -142,7 +142,7 @@ def main(cfg):
         click.secho(f"Question:\n{vlm_planner._question}",fg="green",)
         
         poses_to_plot, orientations_to_plot, target_poses = [], [], []
-        log_traj_data(rr_logger, [poses[0]], poses[0][1], poses_to_plot, orientations_to_plot, target_poses)
+        log_traj_data_target_pose(rr_logger, [poses[0]], poses[0][1], poses_to_plot, orientations_to_plot, target_poses)
 
         # poses_to_plot = [v[1] for v in poses]
         # orientations_to_plot = [v[2] for v in poses]
@@ -162,7 +162,7 @@ def main(cfg):
                 # target_pose[2] = agent_state[2]
                 poses = habitat_data.get_trajectory_to_pose_world_eqa(target_pose, vlm_planner.sg_sim.navmesh_netx_graph)
                 if poses is not None:
-                    log_traj_data(rr_logger, poses, target_pose, poses_to_plot, orientations_to_plot, target_poses)
+                    log_traj_data_target_pose(rr_logger, poses, target_pose, poses_to_plot, orientations_to_plot, target_poses)
                     rr_logger.log_text_data(vlm_planner.full_plan)
 
                     click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)

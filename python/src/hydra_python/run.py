@@ -141,7 +141,7 @@ def run(
 
     imgs_colormap, imgs_rgb, imgs_labels = [], [], []
 
-    # agent_positions = []
+    agent_positions, agent_quats_wxyz = [], []
     if show_progress:
         with click.progressbar(pose_source) as bar:
             for pose in bar:
@@ -161,7 +161,9 @@ def run(
             imgs_labels.append(data.labels)
             imgs_rgb.append(data.rgb)
 
-            # agent_positions.append(data.get_state())
+            agent_pos, agent_quat_wxyz = data.get_state()
+            agent_positions.append(agent_pos)
+            agent_quats_wxyz.append(agent_quat_wxyz)
             mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
             # node_info = hydra_get_object_place_nodes(pipeline)
             # inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
@@ -169,7 +171,8 @@ def run(
 
             if rr_logger is not None:
                 rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
-                # rr_logger.log_agent_data(agent_positions)
+                rr_logger.log_agent_data(agent_positions)
+                rr_logger.log_agent_tf(agent_pos, agent_quat_wxyz)
                 # rr_logger.log_bb_data(node_info['object_node_info'])
                 # rr_logger.log_frontier_data(node_info['frontier_node_positions'])
                 # rr_logger.log_inplane_frontier_data(inplane_frontier_node_positions)

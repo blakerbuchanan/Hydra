@@ -75,7 +75,7 @@ class RRLogger:
     
     def log_agent_data(self, agent_positions):
         rr.log(f"world/robot_traj", rr.LineStrips3D(agent_positions, colors=[0, 0, 255]))
-        rr.log(f"{self.primary_agent_entity}/robot_pos", rr.Points3D(agent_positions[-1], colors=[0, 0, 255], radii=0.11))
+        rr.log(f"world/robot_pos", rr.Points3D(agent_positions[-1], colors=[0, 0, 255], radii=0.11))
 
     def log_traj_data(self, agent_positions):
         rr.log("world/desired_traj", rr.LineStrips3D(agent_positions, colors=[0, 255, 255]))

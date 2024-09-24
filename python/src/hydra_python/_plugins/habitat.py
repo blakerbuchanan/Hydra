@@ -573,7 +573,7 @@ class HabitatInterface:
         if positions_camera.shape[0] < 2:
             return None
 
-        b_R_c = R.from_quat(current_quat_wxyz).as_matrix()
+        b_R_c = R.from_quat(current_quat_xyzw).as_matrix()
         poses = hydra.Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
@@ -638,11 +638,13 @@ class HabitatInterface:
 
     def get_state(self):
         agent = self._sim.get_agent(0)  # Assuming agent ID 0
-        agent_state = agent.get_state().position
+        current_pos = agent.get_state().position
+        current_quat_wxyz = agent.get_state().rotation
 
-        bw_R_bh = np.array([[0, 0, -1], [-1, 0, 0], [0, 1, 0]])
-        p_bw = np.squeeze(bw_R_bh @ agent_state.reshape((3, 1)))
-        return p_bw
+        quat_xyzw, pos = _transform_from_habitat(quat_to_coeffs(current_quat_wxyz), np.array(current_pos))
+        current_quat_xyzw, current_pos = _transform_from_body(quat_xyzw, pos)
+        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+        return current_pos, current_quat_wxyz
 
     def get_scene_size(self):
         scene_bnds = self.pathfinder.get_bounds()
