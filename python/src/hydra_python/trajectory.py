@@ -8,6 +8,8 @@ import pathlib
 import csv
 
 
+from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
+
 def _interp_pose(start, end, alpha):
     new_pose = np.zeros(7)
     new_pose[:3] = alpha * (end[:3] - start[:3]) + start[:3]
@@ -34,7 +36,7 @@ def _pose_from_components(pos, yaw, body_R_camera):
     world_q_body = np.array([0.0, 0.0, np.sin(yaw / 2.0), np.cos(yaw / 2.0)])
     world_q_camera = (
         Rot.from_quat(world_q_body) * Rot.from_matrix(body_R_camera)
-    ).as_quat()
+    ).as_quat() #xyzw
     pose[3] = world_q_camera[3]
     pose[4] = world_q_camera[0]
     pose[5] = world_q_camera[1]
@@ -192,6 +194,74 @@ class Trajectory:
                 poses.append(_interp_pose(pose_start, pose_end, ratio))
 
             poses.append(pose_end)
+
+        poses = np.array(poses)
+        times_s = dt * np.arange(poses.shape[0]) + start_time_s
+        times_ns = (1.0e9 * times_s).astype(np.uint64)
+        return cls(times_ns, poses)
+
+    @classmethod
+    def from_positions_eqa(
+        cls,
+        positions,
+        init_quat_wxyz=None,
+        reinterp_distance=0.2,
+        reinterp_angle=0.2,
+        start_time_s=0.0,
+        dt=0.2,
+    ):
+        """Construct a trajectory from a list of positions."""
+        yaw = np.zeros(positions.shape[0])
+        for i in range(positions.shape[0] - 1):
+            diff = positions[i + 1] - positions[i]
+            yaw[i] = -(np.arctan2(diff[1], diff[0]) + np.pi/2)
+
+        # last segment has no orientation change
+        # yaw[-1] = yaw[-2]
+
+        # init_quat_xyzw = np.roll(init_quat_wxyz, -1)
+        # b_R_c = R.from_quat(init_quat_xyzw).as_matrix()
+
+        poses = []
+        pose_start = np.zeros(7)
+        pose_start[:3] = np.squeeze(positions[0])
+        pose_start[3:] = np.squeeze(init_quat_wxyz)
+        for i in range(positions.shape[0] - 1):
+            pose_end = np.zeros(7)
+            pose_end[:3] = np.squeeze(positions[i+1])
+
+            start_rot = Rot.from_quat(np.roll(pose_start[3:],-1))
+
+            start_yaw = start_rot.as_euler('xyz', degrees=False)[2]
+            yaw_difference = yaw[i] - start_yaw
+
+            # world_q_body = np.array([0.0, 0.0, np.sin(yaw_difference), np.cos(yaw_difference)])
+            world_q_body = quat_to_coeffs(quat_from_angle_axis(yaw_difference, np.array([0, 0, 1])))
+
+            world_q_camera = (
+                Rot.from_quat(world_q_body) * Rot.from_matrix(start_rot.as_matrix())
+            ).as_quat() #xyzw
+            pose_end[3] = world_q_camera[3]
+            pose_end[4] = world_q_camera[0]
+            pose_end[5] = world_q_camera[1]
+            pose_end[6] = world_q_camera[2]
+
+            poses.append(pose_start)
+
+            dist = np.linalg.norm(pose_start[:3] - pose_end[:3])
+            angle_dist = abs(yaw_difference)
+            num_intermediate_pos = int(np.ceil(dist / reinterp_distance) - 1)
+            num_intermediate_yaw = int(np.ceil(angle_dist / reinterp_angle) - 1)
+            num_intermediate = max(num_intermediate_pos, num_intermediate_yaw)
+            for i in range(num_intermediate):
+                # we want slerp ratio to be 0 at start (0)
+                # and 1 at end (num_intermediate)
+                ratio = (i + 1) / (num_intermediate + 1)
+                poses.append(_interp_pose(pose_start, pose_end, ratio))
+
+            poses.append(pose_end)
+
+            pose_start = pose_end.copy()
 
         poses = np.array(poses)
         times_s = dt * np.arange(poses.shape[0]) + start_time_s

@@ -125,6 +125,7 @@ class VLMPLannerEQA:
                 succ=True
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
+                import ipdb; ipdb.set_trace()
                 time.sleep(60)
     
         plan = completion.choices[0].message

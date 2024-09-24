@@ -574,8 +574,11 @@ class HabitatInterface:
             return None
 
         b_R_c = R.from_quat(current_quat_xyzw).as_matrix()
-        poses = hydra.Trajectory.from_positions(
-            np.array(positions_camera), body_R_camera=b_R_c
+        # poses = hydra.Trajectory.from_positions(
+        #     np.array(positions_camera), body_R_camera=b_R_c
+        # )
+        poses = hydra.Trajectory.from_positions_eqa(
+            np.concatenate([current_pos.reshape(1,3), positions_camera], axis=0), init_quat_wxyz=current_quat_wxyz
         )
         return poses
 
