@@ -96,10 +96,10 @@ def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
 
 def is_relevant_frontier(frontier_node_positions, agent_pos):
     frontier_node_positions = frontier_node_positions.reshape(-1,3)
-    thresh_low = agent_pos[2] - 0.3
-    thresh_high = agent_pos[2] + 0.3
+    thresh_low = agent_pos[2] - 0.5
+    thresh_high = agent_pos[2] + 0.5
     in_plane = np.logical_and((frontier_node_positions[:,2] < thresh_high), (frontier_node_positions[:,2] > thresh_low))
-    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 3.0
+    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 7.0
     return np.logical_and(in_plane, nearby)
 
 def hydra_output_callback(pipeline, visualizer):

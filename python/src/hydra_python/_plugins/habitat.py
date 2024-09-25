@@ -586,11 +586,14 @@ class HabitatInterface:
         # pose is in habitat frame, return (pose, quat_wxyz)
         quat_hab_xyzw = _angle_to_rotation_habitat(angle, camera_tilt_deg)
 
+        # habitat_euler = R.from_quat(quat_hab_xyzw).as_euler('xyz', degrees=True)
+
         quat_xyzw, pos = _transform_from_habitat(np.array(quat_hab_xyzw), np.array(pos_hab))
         # quat_xyzw_re, pos_re = _transform_to_habitat(quat_xyzw, pos) # testing
 
         quat_xyzw_normal, pos_normal = _transform_from_body(quat_xyzw, pos)
         # quat_xyzw_normal_re, pos_normal_re = _transform_to_body(quat_xyzw_normal, pos_normal) #testing
+        # hydra_euler = R.from_quat(quat_xyzw_normal).as_euler('xyz', degrees=False)
 
         quat_wxyz_normal = np.roll(quat_xyzw_normal, 1)
 

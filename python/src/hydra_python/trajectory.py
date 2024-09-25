@@ -43,6 +43,20 @@ def _pose_from_components(pos, yaw, body_R_camera):
     pose[6] = world_q_camera[2]
     return pose
 
+def _pose_from_components_eqa(pos, yaw, body_R_camera):
+    pose = np.zeros(7)
+    pose[:3] = np.squeeze(pos)
+    # we assume yaw around z-axis in ENU
+    world_q_body = np.array([np.sin(yaw / 2.0), np.cos(yaw / 2.0), 0.0, 0.0])
+    world_q_camera = (
+        Rot.from_quat(world_q_body) * Rot.from_matrix(body_R_camera)
+    ).as_quat() #xyzw
+    pose[3] = world_q_camera[3]
+    pose[4] = world_q_camera[0]
+    pose[5] = world_q_camera[1]
+    pose[6] = world_q_camera[2]
+    return pose
+
 
 class Trajectory:
     """Represents pre-computed trajectory."""
@@ -214,7 +228,7 @@ class Trajectory:
         yaw = np.zeros(positions.shape[0])
         for i in range(positions.shape[0] - 1):
             diff = positions[i + 1] - positions[i]
-            yaw[i] = -(np.arctan2(diff[1], diff[0]) + np.pi/2)
+            yaw[i] = -1*np.arctan2(diff[0], diff[1])
 
         # last segment has no orientation change
         # yaw[-1] = yaw[-2]
@@ -222,29 +236,43 @@ class Trajectory:
         # init_quat_xyzw = np.roll(init_quat_wxyz, -1)
         # b_R_c = R.from_quat(init_quat_xyzw).as_matrix()
 
+        # Create a list of poses from the above position / yaw data
         poses = []
         pose_start = np.zeros(7)
         pose_start[:3] = np.squeeze(positions[0])
         pose_start[3:] = np.squeeze(init_quat_wxyz)
+        
         for i in range(positions.shape[0] - 1):
             pose_end = np.zeros(7)
+
+            # Add position
             pose_end[:3] = np.squeeze(positions[i+1])
 
+            # Compute a matrix from the rotation component quaternion
             start_rot = Rot.from_quat(np.roll(pose_start[3:],-1))
 
             start_yaw = start_rot.as_euler('xyz', degrees=False)[2]
-            yaw_difference = yaw[i] - start_yaw
+            # print('desired yaw:', yaw[i]*180/np.pi)
+            
+            # yaw_difference = yaw[i] - start_yaw
+            yaw_difference = np.arctan2(np.sin(yaw[i] - start_yaw), np.cos(yaw[i] - start_yaw))
 
             # world_q_body = np.array([0.0, 0.0, np.sin(yaw_difference), np.cos(yaw_difference)])
-            world_q_body = quat_to_coeffs(quat_from_angle_axis(yaw_difference, np.array([0, 0, 1])))
+            # quat_to_coeffs: Returns coefficients of a quaternion in [b, c, d, a] format, where q = a + bi + cj + dk
+            yaw_quat = quat_to_coeffs(quat_from_angle_axis(yaw_difference, np.array([0, 0, 1])))
+            
+            # yaw_quat = quat_to_coeffs(quat_from_angle_axis(0.1, np.array([1, 0, 0])))
 
-            world_q_camera = (
-                Rot.from_quat(world_q_body) * Rot.from_matrix(start_rot.as_matrix())
+            des_quat_xyzw = (
+                Rot.from_quat(yaw_quat) * Rot.from_quat(np.roll(pose_start[3:],-1))
             ).as_quat() #xyzw
-            pose_end[3] = world_q_camera[3]
-            pose_end[4] = world_q_camera[0]
-            pose_end[5] = world_q_camera[1]
-            pose_end[6] = world_q_camera[2]
+
+            # print('final xyz:', (Rot.from_quat(yaw_quat) * Rot.from_quat(np.roll(pose_start[3:],-1))).as_euler('xyz', degrees=True))
+
+            pose_end[3] = des_quat_xyzw[3]
+            pose_end[4] = des_quat_xyzw[0]
+            pose_end[5] = des_quat_xyzw[1]
+            pose_end[6] = des_quat_xyzw[2]
 
             poses.append(pose_start)
 
