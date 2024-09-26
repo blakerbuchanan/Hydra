@@ -1,0 +1,35 @@
+# General
+seed: 42
+exp_name: vlm_sg_eqa_exp
+output_path: /workspace/src/hydra/outputs/${exp_name}
+
+data:
+  question_data_path: '/workspace/data/explore-eqa_semnav/questions.csv'
+  init_pose_data_path: '/workspace/data/explore-eqa_semnav/scene_init_poses.csv'
+  semantic_annot_data_path: '/workspace/data/hm3d-train-semantic-annots-v0.2'
+  scene_data_path: '/workspace/data/hm3d/train'
+
+logging:
+  output_parent_dir: results
+  save_obs: true
+  save_freq: 10
+
+planner:
+  max_step_room_size_ratio: 3
+  break_at_done: False
+
+habitat:
+  scene_type: 'hm3d'
+  img_width: 640
+  img_height: 480
+  camera_height: 1.5
+  camera_tilt_deg: -30
+  agent_z_offset: 0.
+  hfov: 120
+  z_offset: 0
+
+hydra:
+  glog_level: 0
+  verbosity: 0
+  label_space: 'hm3d'
+  config_verbosity: 0
