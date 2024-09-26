@@ -43,4 +43,6 @@ from hydra_python.segmentation_colormap import *
 from hydra_python._hydra_bindings import *
 from hydra_python.dataset_logger import *
 from hydra_python.vlm_planner import *
+from hydra_python.vlm_planner_eqa import *
 from hydra_python.scene_graph_sim import *
+from hydra_python.rr_logger import *

@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../../../temp_test"
+		},
+		{
+			"path": "../../../temp_test2"
 		}
 	],
 	"settings": {}

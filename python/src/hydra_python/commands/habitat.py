@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import habitat_sim
 import pickle
 from itertools import chain
+from hydra_python import RRLogger
 
 
 def _get_trajectory(data, prev_dsg, seed, use_full_scene=False):
@@ -54,11 +55,14 @@ def _plot_sg_trajs(navmesh_nodes, poses, target_poses, pipeline, output_path, su
     active_frontier_place_node_positions = []
     object_node_positions = []
     for node in pipeline.graph.nodes:
+        z = node.attributes.position[2]
         if 'p' in node.id.category.lower():
             # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            # if z<1.0 and z>0.25:
             place_node_positions.append(node.attributes.position)
         if 'f' in node.id.category.lower():
             # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
+            # if z<1.0 and z>0.25:
             active_frontier_place_node_positions.append(node.attributes.position)
         if 'o' in node.id.category.lower():
             object_node_positions.append(node.attributes.position)
@@ -143,12 +147,15 @@ def run(
     """Run Hydra against a habitat scene."""
     from hydra_python._plugins import habitat
 
+    
     if 'hm3d' in scene_type:
         label_space = 'hm3d'
 
     hydra.set_glog_level(glog_level, verbosity)
     output_path = hydra.resolve_output_path(output_path, force=force)
-    data = habitat.HabitatInterface(scene_path, scene_type=scene_type, inflation_radius=0.25, z_offset=0.5)
+
+
+    data = habitat.HabitatInterface(scene_path, scene_type=scene_type, inflation_radius=0.25)
     poses = _get_trajectory(data, prev_dsg, seed, use_full_scene=use_full_scene)
 
     configs = hydra.load_configs("habitat", labelspace_name=label_space)
@@ -178,6 +185,7 @@ def run(
         # TODO(nathan) make pathlib bindings
         hydra.set_glog_dir(str(glog_dir))
 
+    rr_logger = RRLogger(output_path)
     if visualize:
         visualizer = DsgVisualizer(start_remote=False)
         visualizer.update_graph(pipeline.graph)
@@ -194,6 +202,7 @@ def run(
             show_progress=show_progress,
             output_path=output_path,
             suffix='test',
+            rr_logger=rr_logger,
         )
     finally:
         pipeline.save()
@@ -340,7 +349,7 @@ def camera_info(scene_path):
 @click.option("--show-config", default=False, help="show hydra config", is_flag=True)
 @click.option("--show-progress", default=False, help="show progress bar", is_flag=True)
 @click.option("--config-verbosity", default=0, help="glog verbosity to print configs")
-def run_sg_planner(
+def run_sg_sim(
     scene_path,
     scene_type,
     output_path,
@@ -394,6 +403,7 @@ def run_sg_planner(
         # TODO(nathan) make pathlib bindings
         hydra.set_glog_dir(str(glog_dir))
 
+    rr_logger = RRLogger(output_path)
     if visualize:
         visualizer = DsgVisualizer(start_remote=False)
         visualizer.update_graph(pipeline.graph)
@@ -424,6 +434,7 @@ def run_sg_planner(
         show_progress=show_progress,
         output_path=output_path,
         suffix=suffix,
+        rr_logger=rr_logger,
     )
 
     pos_traj = np.array([v[1] for v in poses])
@@ -433,45 +444,162 @@ def run_sg_planner(
     poses_to_plot = [v[1] for v in poses]
     _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
     _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
-    
-    # agent_state = data.get_state()
-    # click.secho(f"Agent state: {agent_state}",fg="yellow",)
 
-    # sg_sim = hydra.SceneGraphSim(output_path, pipeline)
+    agent_state = data.get_state()
+    click.secho(f"Agent state: {agent_state}",fg="yellow",)
+
+    sg_sim = hydra.SceneGraphSim(output_path, pipeline)
     # sg_sim.test_sg()
     
-    # # Randomly sample a frontier node and goto it
-    # active_frontier_place_node_positions = []
-    # for node in pipeline.graph.nodes:
-    #     if 'f' in node.id.category.lower():
-    #         active_frontier_place_node_positions.append(node.attributes.position)
+    # Randomly sample a frontier node and goto it
+    active_frontier_place_node_positions = []
+    for node in pipeline.graph.nodes:
+        if 'f' in node.id.category.lower():
+            active_frontier_place_node_positions.append(node.attributes.position)
     
-    # target_pose = random.choice(active_frontier_place_node_positions).copy()
-    # target_pose[2] = agent_state[2]
+    target_pose = random.choice(active_frontier_place_node_positions).copy()
+    target_pose[2] = agent_state[2]
+    target_poses.append(target_pose)
+    
+    poses = data.get_trajectory_to_pose(agent_state, target_pose)
+    suffix = 't_1'
+    hydra.run(
+        pipeline,
+        data,
+        poses,
+        visualizer=visualizer,
+        show_images=show_images,
+        show_progress=show_progress,
+        output_path=output_path,
+        suffix=suffix,
+    )
 
-    # poses = data.get_trajectory_to_pose(agent_state, target_pose)
-
-    # hydra.run(
-    #     pipeline,
-    #     data,
-    #     poses,
-    #     visualizer=visualizer,
-    #     show_images=show_images,
-    #     show_progress=show_progress,
-    # )
-
-    # sg_sim.update()
+    sg_sim.update()
     # sg_sim.test_sg()
+    poses_to_plot = [v[1] for v in poses]
+    _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
+    _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
 
-    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XY')
-    # _plot_sg_trajs(positions_camera, poses, target_pose, pipeline, output_path, output_path, suffix, view='XZ')
+
+    pipeline.save()
+    if visualizer is not None:
+        visualizer.stop()
+
+@cli.command(name="run_sg_planner")
+@click.argument("scene_path", type=click.Path(exists=True))
+@click.argument("scene_type", type=str, default='mp3d')
+@click.option("-o", "--output-path", default=None)
+@click.option("-l", "--label-space", default="ade20k_mp3d")
+@click.option("-p", "--prev-dsg", default=None, help="dsg containing trajectory")
+@click.option("-s", "--seed", default=None, help="random seed")
+@click.option("-v", "--visualize", default=False, help="start visualizer", is_flag=True)
+@click.option("-g", "--glog-level", default=0, help="minimum glog level")
+@click.option("-f", "--use-full-scene", is_flag=True, help="use-full-scene")
+@click.option("-y", "--force", is_flag=True, help="overwrite previous output")
+@click.option("--verbosity", default=0, help="glog verbosity")
+@click.option("--show-images", default=False, help="show semantics", is_flag=True)
+@click.option("--show-config", default=False, help="show hydra config", is_flag=True)
+@click.option("--show-progress", default=False, help="show progress bar", is_flag=True)
+@click.option("--config-verbosity", default=0, help="glog verbosity to print configs")
+def run_vlm_planner(
+    scene_path,
+    scene_type,
+    output_path,
+    label_space,
+    prev_dsg,
+    seed,
+    visualize,
+    glog_level,
+    use_full_scene,
+    force,
+    verbosity,
+    show_images,
+    show_config,
+    show_progress,
+    config_verbosity,
+):
+    """Run Hydra against a habitat scene."""
+    from hydra_python._plugins import habitat
+
+    if 'hm3d' in scene_type:
+        label_space = 'hm3d'
+
+    hydra.set_glog_level(glog_level, verbosity)
+    output_path = hydra.resolve_output_path(output_path, force=force)
+    data = habitat.HabitatInterface(scene_path, scene_type=scene_type)
+
+    configs = hydra.load_configs("habitat", labelspace_name=label_space)
+    if not configs:
+        click.secho(
+            f"Invalid config: dataset 'habitat' and label space '{label_space}'",
+            fg="red",
+        )
+        return
+
+    pipeline_config = hydra.PipelineConfig(configs)
+    pipeline_config.enable_reconstruction = True
+    pipeline_config.label_names = {i: x for i, x in enumerate(data.colormap.names)}
+    data.colormap.fill_label_space(pipeline_config.label_space)
+
+    if output_path:
+        pipeline_config.logs.log_dir = str(output_path)
+
+    pipeline = hydra.HydraPipeline(
+        pipeline_config, robot_id=0, config_verbosity=config_verbosity
+    )
+    pipeline.init(configs, hydra.create_camera(data.camera_info))
+    if output_path:
+        glog_dir = output_path / "logs"
+        if not glog_dir.exists():
+            glog_dir.mkdir()
+        # TODO(nathan) make pathlib bindings
+        hydra.set_glog_dir(str(glog_dir))
+
+    rr_logger = RRLogger(output_path)
+    if visualize:
+        visualizer = DsgVisualizer(start_remote=False)
+        visualizer.update_graph(pipeline.graph)
+    else:
+        visualizer = None
+
+    # FOR PLOTTING THE NAVMESH
+    graph_nodes = [data.G.nodes[n]["pos"] for n in data.G]
+    positions_camera = np.array([hydra._plugins.habitat._camera_point_from_habitat(p, z_offset=data.z_offset) for p in graph_nodes])
+
+    agent_state = data.get_state()
+    click.secho(f"Agent state: {agent_state}",fg="yellow",)
+
+    # Find intial exploration traj
+    click.secho("Finding rotate in place trajectory",fg="yellow",)
+    poses = data.get_rotate_in_place_trajectory(seed=seed)
+
+    suffix = 't_0'
+    hydra.run(
+        pipeline,
+        data,
+        poses,
+        visualizer=visualizer,
+        show_images=show_images,
+        show_progress=show_progress,
+        output_path=output_path,
+        suffix=suffix,
+        rr_logger=rr_logger,
+    )
+
+    pos_traj = np.array([v[1] for v in poses])
+
+    target_poses = []
+    target_poses.append(pos_traj[-1])
+    poses_to_plot = [v[1] for v in poses]
+    orientations_to_plot = [v[2] for v in poses]
     
-
     instr = 'Go to the kitchen.'
     planner = hydra.VLMPLanner(instr, output_path, pipeline)
     t=1
     while not planner.done:
         agent_state = data.get_state()
+
+        click.secho(f"Planning at step: {planner.t}",fg="blue",)
         target_pose = planner.get_next_action()
         if target_pose is not None:
             target_pose[2] = agent_state[2] # TODO(saumya): filter frontier nodes to only include nodes in agent place
@@ -479,6 +607,16 @@ def run_sg_planner(
 
             suffix = f't_{planner.t}'
             if poses is not None:
+                poses_to_plot.extend([v[1] for v in poses])
+                orientations_to_plot.extend([v[2] for v in poses])
+                target_poses.append(target_pose)
+                rr_logger.log_traj_data(poses_to_plot)
+                for i in range(len(poses_to_plot)):
+                    rr_logger.log_agent_tf(poses_to_plot[i], orientations_to_plot[i])
+                rr_logger.log_target_poses(target_poses)
+                rr_logger.log_text_data(planner.full_plan)
+
+                click.secho(f"Executing trajectory: {planner.t}",fg="yellow",)
                 hydra.run(
                     pipeline,
                     data,
@@ -488,9 +626,9 @@ def run_sg_planner(
                     show_progress=show_progress,
                     output_path=output_path,
                     suffix=suffix,
+                    rr_logger=rr_logger,
                 )
-                poses_to_plot.extend([v[1] for v in poses])
-                target_poses.append(target_pose)
+                
                 _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XY')
                 _plot_sg_trajs(positions_camera, poses_to_plot, target_poses, pipeline, output_path, suffix, view='XZ')
                 t+=1

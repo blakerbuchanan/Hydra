@@ -34,10 +34,10 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action)
     
     return PlannerResponse
 
-class VLMPLanner:
-    def __init__(self, instr, output_path, pipeline):
+class VLMPLannerEQA:
+    def __init__(self, question_data, output_path, pipeline, rr_logger):
         
-        self._instruction = instr
+        self._question = self._get_instruction(question_data)
         self._output_path = output_path
 
         self._example_plan = '' #TODO(saumya)
@@ -45,9 +45,20 @@ class VLMPLanner:
         self._history = ''
         self._t = 0
 
-        self._outputs_to_save = [f'Instruction: {self._instruction}. \n ']
+        self._outputs_to_save = [f'Question: {self._question}. \n ']
 
-        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline)
+        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger)
+
+    def _get_instruction(self, question_data):
+        question = question_data["question"]
+        choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
+        # Re-format the question to follow LLaMA style
+        vlm_question = question
+        vlm_pred_candidates = ["A", "B", "C", "D"]
+        for token, choice in zip(vlm_pred_candidates, choices):
+            vlm_question += "\n" + token + "." + " " + choice
+        
+        return vlm_question
 
     @property
     def done(self):
@@ -94,7 +105,7 @@ class VLMPLanner:
 
         messages=[
             {"role": "system", "content": f"AGENT ROLE: {self.agent_role_prompt}"},
-            {"role": "system", "content": f"INSTRUCTION: {self._instruction}"},
+            {"role": "system", "content": f"INSTRUCTION: {self._question}"},
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
@@ -114,6 +125,7 @@ class VLMPLanner:
                 succ=True
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
+                import ipdb; ipdb.set_trace()
                 time.sleep(60)
     
         plan = completion.choices[0].message
