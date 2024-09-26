@@ -35,6 +35,11 @@ class SceneGraphSim:
         self.navmesh_netx_graph = nx.Graph()
 
         self._visited_node_ids, self._frontier_node_ids = [], []
+
+        # Clear all objects from a specific namespace
+        self.rr_logger.log_clear("world/hydra_graph")
+        self.rr_logger.log_clear("/world/annotations/bb")
+
         ## Adding agent nodes
         agent_ids, agent_cat_ids = [], []
         for layer in self.pipeline.graph.dynamic_layers:
@@ -53,7 +58,9 @@ class SceneGraphSim:
                     self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
         self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
         self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
-
+        
+        
+        object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
         ## Adding other nodes
         for node in self.pipeline.graph.nodes:
             attr={}
@@ -69,6 +76,14 @@ class SceneGraphSim:
             
             # Filtering
             if 'o' in node.id.category.lower():
+                object_node_positions.append(node.attributes.position)
+                bbox = node.attributes.bounding_box
+                bb_half_sizes.append(0.5 * bbox.dimensions)
+                bb_centroids.append(bbox.world_P_center)
+                bb_mat3x3.append(bbox.world_R_center)
+                bb_labels.append(node.attributes.name)
+                bb_colors.append(node.attributes.color)
+                
                 if node_name in self.filter_out_objects:
                     continue
             if 'p' in node.id.category.lower():
@@ -80,7 +95,17 @@ class SceneGraphSim:
                     self._frontier_node_ids.append(nodeid)
 
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-
+        
+        bb_info = {
+                'object_node_positions': object_node_positions,
+                'bb_half_sizes': bb_half_sizes,
+                'bb_centroids': bb_centroids,
+                'bb_mat3x3': bb_mat3x3,
+                'bb_labels': bb_labels,
+                'bb_colors': bb_colors,
+            }
+        
+        self.rr_logger.log_bb_data(bb_info)
         ## Adding edges
         for edge in chain(self.pipeline.graph.edges, self.pipeline.graph.dynamic_interlayer_edges):
             source_node = self.pipeline.graph.get_node(edge.source)
@@ -291,7 +316,7 @@ class SceneGraphSim:
         return f'{agent_loc_str} {room_str}'
     
     def update(self):
-        self._load_scene_graph()
+        # self._load_scene_graph()
         # self.test_sg()
         self._build_sg_from_hydra_graph()
 

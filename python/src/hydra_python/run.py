@@ -86,20 +86,20 @@ def hydra_get_object_place_nodes(pipeline):
     }
     return node_info
 
-def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
-    if len(frontier_node_positions)>0:
-        inplace_idxs = is_relevant_frontier(np.array(frontier_node_positions), agent_pos)
-        inplane_frontier_node_positions = np.array(frontier_node_positions)[inplace_idxs]
-        return inplane_frontier_node_positions
-    else:
-        return []
+# def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
+#     if len(frontier_node_positions)>0:
+#         inplace_idxs = is_relevant_frontier(np.array(frontier_node_positions), agent_pos)
+#         inplane_frontier_node_positions = np.array(frontier_node_positions)[inplace_idxs]
+#         return inplane_frontier_node_positions
+#     else:
+#         return []
 
 def is_relevant_frontier(frontier_node_positions, agent_pos):
     frontier_node_positions = frontier_node_positions.reshape(-1,3)
-    thresh_low = agent_pos[2] - 0.5
-    thresh_high = agent_pos[2] + 0.5
+    thresh_low = agent_pos[2] - 0.6
+    thresh_high = agent_pos[2] + 0.3
     in_plane = np.logical_and((frontier_node_positions[:,2] < thresh_high), (frontier_node_positions[:,2] > thresh_low))
-    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 7.0
+    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 3.0
     return np.logical_and(in_plane, nearby)
 
 def hydra_output_callback(pipeline, visualizer):
@@ -135,6 +135,7 @@ def run(
     output_path=None,
     suffix=' ',
     rr_logger=None,
+    vlm_planner=None,
 ):
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
@@ -168,16 +169,12 @@ def run(
             # node_info = hydra_get_object_place_nodes(pipeline)
             # inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
             # inplane_place_node_positions = get_in_plane_frontier_nodes(node_info['place_node_positions'], agent_positions[-1])
-
+            if vlm_planner is not None:
+                vlm_planner.sg_sim.update()
             if rr_logger is not None:
                 rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
                 rr_logger.log_agent_data(agent_positions)
                 rr_logger.log_agent_tf(agent_pos, agent_quat_wxyz)
-                # rr_logger.log_bb_data(node_info['object_node_info'])
-                # rr_logger.log_frontier_data(node_info['frontier_node_positions'])
-                # rr_logger.log_inplane_frontier_data(inplane_frontier_node_positions)
-                # rr_logger.log_place_data(node_info['place_node_positions'])
-                # rr_logger.log_inplane_place_data(inplane_place_node_positions)
                 rr_logger.log_img_data(data)
                 rr_logger.step()
 

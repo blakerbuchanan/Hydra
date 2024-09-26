@@ -114,10 +114,10 @@ class RRLogger:
             rr.Points3D(frontier_node_positions, colors=[255,0,0], radii=0.08)
         )
 
-    def log_inplane_frontier_data(self, frontier_node_positions):
+    def log_selected_frontier_data(self, frontier_node_positions):
         # log the frontier nodes with color red
         rr.log(
-            "world/inplane_frontier_nodes",
+            "world/selected_frontier_nodes",
             rr.Points3D(frontier_node_positions, colors=[255, 255, 0], radii=0.08)
         )
     
@@ -171,3 +171,6 @@ class RRLogger:
     def step(self):
         self._t += self._dt
         rr.set_time_seconds(self._timeline, self._t)
+
+    def log_clear(self, namespace):
+        rr.log(namespace, rr.Clear(recursive=True))
