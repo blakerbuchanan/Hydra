@@ -1,7 +1,7 @@
 import json
 from enum import Enum
 from typing import Union
-from typing import List
+from typing import List, Tuple
 import time
 import hydra_python as hydra
 
@@ -12,9 +12,13 @@ client = OpenAI()
 from pydantic import BaseModel
 
 
-def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action):
+def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options):
     class Done_action(str, Enum):
         Done = "done_with_task"
+    
+    class Confidence_check(str, Enum):
+        Confident_in_answering_question = "yes"
+        Not_confident_in_answering_question = "no"
 
     class Goto_visited_node_step(BaseModel):
         explanation_visited: str
@@ -27,10 +31,20 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action)
     class Done_step(BaseModel):
         explanation_done: str
         action: Done_action
+    
+    class Answer(BaseModel):
+        explanation_ans: str
+        answer: Answer_options
+
+    class Confidence(BaseModel):
+        explanation_conf: str
+        answer: Confidence_check
 
     class PlannerResponse(BaseModel):
         steps: List[Union[Goto_visited_node_step, Goto_frontier_node_step, Done_step]]
-        final_full_plan: str
+        answer: Answer
+        confidence: Confidence
+        # final_full_plan: str
     
     return PlannerResponse
 
@@ -51,11 +65,11 @@ class VLMPLannerEQA:
 
     def _get_instruction(self, question_data):
         question = question_data["question"]
-        choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
+        self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
         # Re-format the question to follow LLaMA style
         vlm_question = question
-        vlm_pred_candidates = ["A", "B", "C", "D"]
-        for token, choice in zip(vlm_pred_candidates, choices):
+        self.vlm_pred_candidates = ["A", "B", "C", "D"]
+        for token, choice in zip(self.vlm_pred_candidates, self.choices):
             vlm_question += "\n" + token + "." + " " + choice
         
         return vlm_question
@@ -71,22 +85,24 @@ class VLMPLannerEQA:
     def get_actions(self):
         Goto_visited_node_action = Enum('Goto_visited_node_action', {ac: ac for ac in self.sg_sim.visited_node_ids}, type=str)
         Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
-        return Goto_visited_node_action, Goto_frontier_node_action
+        Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
+        return Goto_visited_node_action, Goto_frontier_node_action, Answer_options
     
     @property
     def agent_role_prompt(self):
         prompt = "You are an excellent graph planning agent. \
             You are given a scene graph representation (in json format) of the areas of the environment you have explored so far. \
             Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
-            The scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
             Frontier nodes and visited nodes are empty spaces in the scene where the agent can navigate to.\
             Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
             Edges among frontier nodes and visited nodes tell which empty spaces are connected to each other, hence can be reached from one another.\
-            You can take three kinds of steps in the environement: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
+            You are tasked with exploring a previously unseen enviornment and Answer a multiple-choice question about the environment. \
+            You are also required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
+            Finally, You can take three kinds of steps in the environment: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
             1) Goto_visited_node_step: Navigate to a visited node. Scene graph may or may not be augmented depending upon how well the region was explored when visited before \n \
             2) Goto_frontier_node_step: Navigate to a frontier (unexplored) node. Going to frontier node will proide the agent with new observations and the scene graph will be augmented. \n \
-            4) Done_step: Check the current state and scene graph carefully and infer if the instruction has been successfully completed. If yes, take the done action. \n "
+            3) Done_step: Check the current state and scene graph carefully and infer the question can be answered with high confidence. If yes, take the done action. \n "
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -105,11 +121,11 @@ class VLMPLannerEQA:
 
         messages=[
             {"role": "system", "content": f"AGENT ROLE: {self.agent_role_prompt}"},
-            {"role": "system", "content": f"INSTRUCTION: {self._question}"},
+            {"role": "system", "content": f"QUESTION: {self._question}"},
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
-        Goto_visited_node_action, Goto_frontier_node_action = self.get_actions()
+        Goto_visited_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
 
         succ=False
         while not succ:
@@ -119,7 +135,7 @@ class VLMPLannerEQA:
                     # model="gpt-4o-mini",
                     model="gpt-4o-2024-08-06",
                     messages=messages,
-                    response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action),
+                    response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options),
                 )
                 print(f"Time taken for planning next step: {time.time()-start}s")
                 succ=True
@@ -143,7 +159,6 @@ class VLMPLannerEQA:
                 target_pose = None
             else:
                 target_pose = self.sg_sim.get_position_from_id(step.action.value)
-            
 
             # Saving outputs to file
             self._outputs_to_save.append(f'At t={self._t}: \n Agent state: {agent_state} \n LLM output: {step}. \n \n')
@@ -152,5 +167,5 @@ class VLMPLannerEQA:
                 text_file.write(self.full_plan)
 
             self._t += 1
-            return target_pose
+            return target_pose, self.done, plan.parsed.confidence.answer.value, plan.parsed.answer.answer.name
         
