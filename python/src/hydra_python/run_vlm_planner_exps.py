@@ -151,15 +151,14 @@ def main(cfg):
         # rr_logger.log_agent_tf(poses_to_plot[0], orientations_to_plot[0])
         # rr_logger.log_traj_data([poses_to_plot[0]])
         # rr_logger.log_target_poses(target_poses)
-        
+        successes, successes_wo_done = 0, 0
         # Planner for current question
         for cnt_step in range(max_steps):
             # agent_state = habitat_data.get_state()
             click.secho(f"Planning at step: {vlm_planner.t}",fg="blue",)
-            target_pose = vlm_planner.get_next_action()
+            target_pose, done, confidence, answer_output = vlm_planner.get_next_action()
             import ipdb; ipdb.set_trace()
             if target_pose is not None:
-                # target_pose[2] = agent_state[2]
                 poses = habitat_data.get_trajectory_to_pose_world_eqa(target_pose, vlm_planner.sg_sim.navmesh_netx_graph)
                 if poses is not None:
                     log_traj_data_target_pose(rr_logger, poses, target_pose, poses_to_plot, orientations_to_plot, target_poses)
@@ -175,6 +174,16 @@ def main(cfg):
                         suffix=f't_{vlm_planner.t}',
                         rr_logger=rr_logger,
                     )
+            if done and 'yes' in confidence:
+                if answer == answer_output:
+                    successes += 1
+                    click.secho(f"Success at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    break
+            if 'yes' in confidence:
+                if answer == answer_output:
+                    successes_wo_done += 1
+                    click.secho(f"Success without done at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    break
         pipeline.save()
 
 if __name__ == "__main__":
