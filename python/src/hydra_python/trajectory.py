@@ -296,6 +296,143 @@ class Trajectory:
         times_ns = (1.0e9 * times_s).astype(np.uint64)
         return cls(times_ns, poses)
 
+    @classmethod
+    def from_positions_habitat(
+        cls,
+        positions,
+        init_quat_wxyz=None,
+        reinterp_distance=0.2,
+        reinterp_angle=0.2,
+        start_time_s=0.0,
+        dt=0.2,
+    ):
+        """Construct a trajectory from a list of positions."""
+        yaw = np.zeros(positions.shape[0])
+        for i in range(positions.shape[0] - 1):
+            diff = positions[i + 1] - positions[i]
+            yaw[i] = np.arctan2(-diff[0], diff[2])
+
+        # last segment has no orientation change
+        # yaw[-1] = yaw[-2]
+
+        # init_quat_xyzw = np.roll(init_quat_wxyz, -1)
+        # b_R_c = R.from_quat(init_quat_xyzw).as_matrix()
+
+        # Create a list of poses from the above position / yaw data
+        poses = []
+        pose_start = np.zeros(7)
+        pose_start[:3] = np.squeeze(positions[0])
+        pose_start[3:] = np.squeeze(init_quat_wxyz)
+        
+        for i in range(positions.shape[0] - 1):
+            pose_end = np.zeros(7)
+
+            # Add position
+            pose_end[:3] = np.squeeze(positions[i+1])
+
+            # Compute a matrix from the rotation component quaternion
+            start_rot = Rot.from_quat(np.roll(pose_start[3:],-1))
+
+            start_yaw = start_rot.as_euler('xyz', degrees=False)[1]
+            # print('desired yaw:', yaw[i]*180/np.pi)
+            
+            # yaw_difference = yaw[i] - start_yaw
+            yaw_difference = np.arctan2(np.sin(yaw[i] - start_yaw), np.cos(yaw[i] - start_yaw))
+
+            # world_q_body = np.array([0.0, 0.0, np.sin(yaw_difference), np.cos(yaw_difference)])
+            # quat_to_coeffs: Returns coefficients of a quaternion in [b, c, d, a] format, where q = a + bi + cj + dk
+            yaw_quat = quat_to_coeffs(quat_from_angle_axis(yaw_difference, np.array([0, 1, 0])))
+            
+            # yaw_quat = quat_to_coeffs(quat_from_angle_axis(0.1, np.array([1, 0, 0])))
+
+            des_quat_xyzw = (
+                Rot.from_quat(yaw_quat) * Rot.from_quat(np.roll(pose_start[3:],-1))
+            ).as_quat() #xyzw
+
+            # print('final xyz:', (Rot.from_quat(yaw_quat) * Rot.from_quat(np.roll(pose_start[3:],-1))).as_euler('xyz', degrees=True))
+
+            pose_end[3] = des_quat_xyzw[3]
+            pose_end[4] = des_quat_xyzw[0]
+            pose_end[5] = des_quat_xyzw[1]
+            pose_end[6] = des_quat_xyzw[2]
+
+            poses.append(pose_start)
+
+            dist = np.linalg.norm(pose_start[:3] - pose_end[:3])
+            angle_dist = abs(yaw_difference)
+            num_intermediate_pos = int(np.ceil(dist / reinterp_distance) - 1)
+            num_intermediate_yaw = int(np.ceil(angle_dist / reinterp_angle) - 1)
+            num_intermediate = max(num_intermediate_pos, num_intermediate_yaw)
+            for i in range(num_intermediate):
+                # we want slerp ratio to be 0 at start (0)
+                # and 1 at end (num_intermediate)
+                ratio = (i + 1) / (num_intermediate + 1)
+                poses.append(_interp_pose(pose_start, pose_end, ratio))
+
+            poses.append(pose_end)
+
+            pose_start = pose_end.copy()
+
+        poses = np.array(poses)
+        times_s = dt * np.arange(poses.shape[0]) + start_time_s
+        times_ns = (1.0e9 * times_s).astype(np.uint64)
+        return cls(times_ns, poses)
+    
+
+    @classmethod
+    def from_poses_habitat(
+        cls,
+        positions,
+        init_quat_wxyz=None,
+        desired_quat_wxyz=None,
+        yaw_diff=None,
+        reinterp_distance=0.2,
+        reinterp_angle=0.2,
+        start_time_s=0.0,
+        dt=0.2,
+    ):
+        """Construct a trajectory from a list of positions and quaternions."""
+
+        # last segment has no orientation change
+        # yaw[-1] = yaw[-2]
+
+        # init_quat_xyzw = np.roll(init_quat_wxyz, -1)
+        # b_R_c = R.from_quat(init_quat_xyzw).as_matrix()
+
+        # Create a list of poses from the above position / yaw data
+        poses = []
+        pose_start = np.zeros(7)
+        pose_start[:3] = np.squeeze(positions[0])
+        pose_start[3:] = np.squeeze(init_quat_wxyz)
+        
+        for i in range(positions.shape[0] - 1):
+            pose_end = np.zeros(7)
+            # Add position
+            pose_end[:3] = np.squeeze(positions[i+1])
+            pose_end[3:] = np.squeeze(desired_quat_wxyz)
+
+            poses.append(pose_start)
+
+            dist = np.linalg.norm(pose_start[:3] - pose_end[:3])
+
+            num_intermediate_pos = int(np.ceil(dist / reinterp_distance) - 1)
+            num_intermediate_yaw = int(np.ceil(yaw_diff / reinterp_angle) - 1)
+            num_intermediate = max(num_intermediate_pos, num_intermediate_yaw)
+            for i in range(num_intermediate):
+                # we want slerp ratio to be 0 at start (0)
+                # and 1 at end (num_intermediate)
+                ratio = (i + 1) / (num_intermediate + 1)
+                poses.append(_interp_pose(pose_start, pose_end, ratio))
+
+            poses.append(pose_end)
+
+            pose_start = pose_end.copy()
+
+        poses = np.array(poses)
+        times_s = dt * np.arange(poses.shape[0]) + start_time_s
+        times_ns = (1.0e9 * times_s).astype(np.uint64)
+        return cls(times_ns, poses)
+    
     def save(self, filename):
         """Save the trajectory to the csv."""
         filepath = pathlib.Path(filename).expanduser().absolute()

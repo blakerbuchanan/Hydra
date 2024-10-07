@@ -3,15 +3,14 @@ import numpy as np
 import networkx as nx
 from networkx.readwrite import json_graph
 from itertools import chain
-from hydra_python import is_relevant_frontier
 
 class SceneGraphSim:
-    def __init__(self, sg_path, pipeline, rr_logger):
+    def __init__(self, sg_path, pipeline, rr_logger, frontier_nodes):
         self._sg_path = sg_path / "filtered_dsg.json"
         self.pipeline = pipeline
         self.filter_out_objects = ['wall, floor', 'ceiling', 'door_frame']
         self.rr_logger = rr_logger
-        self.update()
+        self.update(frontier_nodes)
     
     def _load_scene_graph(self):
         with open(self._sg_path, "r") as f:
@@ -29,6 +28,15 @@ class SceneGraphSim:
     @property
     def frontier_node_ids(self):
         return self._frontier_node_ids
+
+    def is_relevant_frontier(self, frontier_node_positions, agent_pos):
+        frontier_node_positions = frontier_node_positions.reshape(-1,3)
+        thresh_low = agent_pos[2] - 0.75
+        thresh_high = agent_pos[2] + 0.3
+        in_plane = np.logical_and((frontier_node_positions[:,2] < thresh_high), (frontier_node_positions[:,2] > thresh_low))
+        nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 2.0
+        return np.logical_and(in_plane, nearby)
+
 
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
@@ -69,7 +77,7 @@ class SceneGraphSim:
             attr['name'] = node_name
             attr['layer'] = node.layer
 
-            self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
+            # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
@@ -91,9 +99,13 @@ class SceneGraphSim:
                 self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
             if 'f' in node.id.category.lower():
                 self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
-                if is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
+                if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
+                    # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
                     self._frontier_node_ids.append(nodeid)
-
+            
+            # DONT ADD FRONTIER NODES
+            if 'f' in node.id.category.lower():
+                continue
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
         bb_info = {
@@ -116,7 +128,7 @@ class SceneGraphSim:
             edge_type = f'{source_type}-to-{target_type}'
             edgeid = f'{sourceid}-to-{targetid}'
 
-            self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
+            # self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
 
             if ('visited' in source_type) and ('visited' in target_type or 'frontier' in target_type):
                 self.navmesh_netx_graph.add_edges_from([(
@@ -136,6 +148,8 @@ class SceneGraphSim:
                 continue
             if 'frontier' in source_type and 'frontier' in target_type:
                 continue
+            if 'frontier' in source_type or 'frontier' in target_type:
+                continue
 
             self.filtered_netx_graph.add_edges_from([(
                 sourceid, targetid,
@@ -144,6 +158,20 @@ class SceneGraphSim:
                 'type': edge_type}
             )])
         self.current_room = [n for n in self.filtered_netx_graph.predecessors(self.curr_agent_id) if 'room' in n]
+    
+    
+    def _add_frontier_nodes(self, frontier_nodes):
+        self._frontier_node_ids = []
+        for i in range(frontier_nodes.shape[0]):
+            attr={}
+            attr['position'] = list(frontier_nodes[i])
+            attr['name'] = 'frontier'
+            attr['type'] = 'frontier'
+            attr['layer'] = 2
+            nodeid = f'frontier_{i}'
+            self._frontier_node_ids.append(nodeid)
+            self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
+
 
     def _get_node_properties(self, node):
         # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
@@ -315,10 +343,11 @@ class SceneGraphSim:
 
         return f'{agent_loc_str} {room_str}'
     
-    def update(self):
+    def update(self, frontier_nodes=None):
         # self._load_scene_graph()
         # self.test_sg()
         self._build_sg_from_hydra_graph()
+        self._add_frontier_nodes(frontier_nodes)
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])

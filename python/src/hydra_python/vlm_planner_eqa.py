@@ -49,9 +49,10 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action,
     return PlannerResponse
 
 class VLMPLannerEQA:
-    def __init__(self, question_data, output_path, pipeline, rr_logger):
+    def __init__(self, question_data, output_path, pipeline, rr_logger, frontier_nodes=None):
         
         self._question = self._get_instruction(question_data)
+        self._answer = question_data["answer"]
         self._output_path = output_path
 
         self._example_plan = '' #TODO(saumya)
@@ -59,9 +60,9 @@ class VLMPLannerEQA:
         self._history = ''
         self._t = 0
 
-        self._outputs_to_save = [f'Question: {self._question}. \n ']
+        self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
 
-        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger)
+        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger, frontier_nodes)
 
     def _get_instruction(self, question_data):
         question = question_data["question"]
@@ -97,12 +98,12 @@ class VLMPLannerEQA:
             Frontier nodes and visited nodes are empty spaces in the scene where the agent can navigate to.\
             Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
             Edges among frontier nodes and visited nodes tell which empty spaces are connected to each other, hence can be reached from one another.\
-            You are tasked with exploring a previously unseen enviornment and Answer a multiple-choice question about the environment. \
+            You are tasked with 'exploring' a previously unseen enviornment to Answer a multiple-choice question about the environment. Keep exploring until you can confidently answer the question. \
             You are also required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
             Finally, You can take three kinds of steps in the environment: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
             1) Goto_visited_node_step: Navigate to a visited node. Scene graph may or may not be augmented depending upon how well the region was explored when visited before \n \
             2) Goto_frontier_node_step: Navigate to a frontier (unexplored) node. Going to frontier node will proide the agent with new observations and the scene graph will be augmented. \n \
-            3) Done_step: Check the current state and scene graph carefully and infer the question can be answered with high confidence. If yes, take the done action. \n "
+            3) Done_step: Check the current state and scene graph carefully. If the question can be answered with high confidence, then only take the done action else take one of the other actions. \n "
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -113,7 +114,7 @@ class VLMPLannerEQA:
         return prompt
 
     def get_next_action(self):
-        self.sg_sim.update()
+        # self.sg_sim.update()
         
         agent_state = self.sg_sim.get_current_semantic_state_str()
 
@@ -138,34 +139,33 @@ class VLMPLannerEQA:
                     response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options),
                 )
                 print(f"Time taken for planning next step: {time.time()-start}s")
-                succ=True
+                plan = completion.choices[0].message
+                if not (plan.refusal): # If the model refuses to respond, you will get a refusal message
+                    succ=True
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
-                import ipdb; ipdb.set_trace()
-                time.sleep(60)
+                time.sleep(1)
     
         plan = completion.choices[0].message
+        step = plan.parsed.steps[0]
+        print(f'At t={self._t}: \n {step}')
 
-        # If the model refuses to respond, you will get a refusal message
-        if (plan.refusal):
-            print(plan.refusal)
-            return None
+        if 'done_with_task' in step.action.value:
+            self._done = True
+            target_pose = None
         else:
-            step = plan.parsed.steps[0]
-            print(f'At t={self._t}: \n {step}')
+            target_pose = self.sg_sim.get_position_from_id(step.action.value)
 
-            if 'done_with_task' in step.action.value:
-                self._done = True
-                target_pose = None
-            else:
-                target_pose = self.sg_sim.get_position_from_id(step.action.value)
+        # Saving outputs to file
+        self._outputs_to_save.append(f'At t={self._t}: \n \
+                                        Agent state: {agent_state} \n \
+                                        LLM output: {step}. \n \
+                                        Confidence: {plan.parsed.confidence} \n \
+                                        Answer: {plan.parsed.answer} \n \n')
+        self.full_plan = ' '.join(self._outputs_to_save)
+        with open(self._output_path / "llm_outputs.json", "w") as text_file:
+            text_file.write(self.full_plan)
 
-            # Saving outputs to file
-            self._outputs_to_save.append(f'At t={self._t}: \n Agent state: {agent_state} \n LLM output: {step}. \n \n')
-            self.full_plan = ' '.join(self._outputs_to_save)
-            with open(self._output_path / "llm_outputs.json", "w") as text_file:
-                text_file.write(self.full_plan)
-
-            self._t += 1
-            return target_pose, self.done, plan.parsed.confidence.answer.value, plan.parsed.answer.answer.name
+        self._t += 1
+        return target_pose, self.done, plan.parsed.confidence.answer.value, plan.parsed.answer.answer.name
         

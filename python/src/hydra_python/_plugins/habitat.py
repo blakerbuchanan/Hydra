@@ -13,6 +13,7 @@ import os
 import yaml
 
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
+from hydra_python.frontier_mapping_eqa.utils import *
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -249,13 +250,15 @@ class HabitatInterface:
             height=360,
             agent_z_offset=0.0,
             hfov=90.0,
-            z_offset=0.5):
+            z_offset=0.5,
+            camera_tilt=0):
         
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
         self._scene_type = scene_type
         self.inflation_radius = inflation_radius
         self.z_offset = z_offset
+        self._camera_tilt = camera_tilt
 
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
@@ -567,10 +570,11 @@ class HabitatInterface:
 
         nodes = nx.shortest_path(navmesh_sg, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
 
-        positions_camera = np.array([navmesh_sg.nodes[x]["position"] for x in nodes])
-        positions_camera[:,2] = current_pos[2] # project to agent plane
+        positions_camera = [navmesh_sg.nodes[x]["position"] for x in nodes]
+        positions_camera_proj = np.array(positions_camera)
+        positions_camera_proj[:,2] = current_pos[2] # project to agent plane
         
-        if positions_camera.shape[0] < 2:
+        if positions_camera_proj.shape[0] < 2:
             return None
 
         b_R_c = R.from_quat(current_quat_xyzw).as_matrix()
@@ -578,11 +582,71 @@ class HabitatInterface:
         #     np.array(positions_camera), body_R_camera=b_R_c
         # )
         poses = hydra.Trajectory.from_positions_eqa(
-            np.concatenate([current_pos.reshape(1,3), positions_camera], axis=0), init_quat_wxyz=current_quat_wxyz
+            np.concatenate([current_pos.reshape(1,3), positions_camera_proj], axis=0), init_quat_wxyz=current_quat_wxyz
+        )
+        return poses, positions_camera
+
+    def get_trajectory_from_path_habitat_frame(self, desired_path):
+        # desired path is in world frame of eqa
+        desired_path_habitat = pos_normal_to_habitat(desired_path)
+
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+        current_quat_xyzw = quat_to_coeffs(agent.get_state().rotation)
+        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+
+        desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
+        poses = hydra.Trajectory.from_positions_habitat(
+            np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), init_quat_wxyz=current_quat_wxyz
         )
         return poses
 
+    def get_trajectory_from_path_angles_habitat_frame(self, path_normal, angles, current_heading, camera_tilt_deg):
+        # desired path is in world frame of eqa
+        desired_path_habitat = pos_normal_to_habitat(path_normal)
+        diff = desired_path_habitat[-1] - desired_path_habitat[0]
+        desired_heading = np.arctan2(-diff[0],-diff[2])
+        desired_quat_habitat_xyzw = _angle_to_rotation_habitat(desired_heading, camera_tilt_deg)
+        desired_quat_habitat_wxyz = np.roll(desired_quat_habitat_xyzw, 1)
+
+        yaw_diff = abs((current_heading - desired_heading + np.pi) % (2 * np.pi) - np.pi)
+        
+        # heading_sample_range = [desired_heading-30*np.pi/180, desired_heading+30*np.pi/180]
+        # desired_quat_habitat_wxyz, yaw_diff = [], []
+        # yaw_prev = current_heading
+        # for i in len(desired_path_habitat):
+        #     heading_angle = np.random.uniform(heading_sample_range[0], heading_sample_range[1])
+        #     des_quat_xyzw = _angle_to_rotation_habitat(heading_angle, camera_tilt_deg)
+        #     desired_quat_habitat_wxyz.append(np.roll(des_quat_xyzw, 1))
+        #     yaw_diff.append(abs((heading_angle - yaw_prev + np.pi) % (2 * np.pi) - np.pi))
+        #     yaw_prev = heading_angle
+
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+        current_quat_xyzw = quat_to_coeffs(agent.get_state().rotation)
+        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+
+        desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
+        poses = hydra.Trajectory.from_poses_habitat(
+            np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), 
+            init_quat_wxyz=current_quat_wxyz,
+            desired_quat_wxyz=desired_quat_habitat_wxyz,
+            yaw_diff=yaw_diff
+        )
+        return poses
+    
     def get_init_poses_eqa(self, pos_hab, angle, camera_tilt_deg):
+        # pose is in habitat frame, return (pose, quat_wxyz)
+        quat_habitat_xyzw = _angle_to_rotation_habitat(angle, camera_tilt_deg)
+        quat_habitat_wxyz = np.roll(quat_habitat_xyzw, 1)
+
+        poses = []
+        dt = 0.2
+        for i in range(10):
+            poses.append((int(i*dt*1e9), pos_hab, quat_habitat_wxyz))
+        return poses
+
+    def get_init_poses_hydra(self, pos_hab, angle, camera_tilt_deg):
         # pose is in habitat frame, return (pose, quat_wxyz)
         quat_hab_xyzw = _angle_to_rotation_habitat(angle, camera_tilt_deg)
 
@@ -621,11 +685,17 @@ class HabitatInterface:
             np.array(position_camera), body_R_camera=b_R_c
         )
 
-    def set_pose(self, timestamp, world_T_camera):
+    def set_pose(self, timestamp, world_T_camera, is_eqa=False):
         """Set pose of the agent directly."""
-        w_q_c = R.from_matrix(world_T_camera[:3, :3]).as_quat()
-        w_q_b, p_b = _transform_to_body(w_q_c, world_T_camera[:3, 3])
-        h_q_c, p_h = _transform_to_habitat(w_q_b, p_b)
+        if is_eqa:
+            # pose_normal = pose_tsdf_to_normal(world_T_camera)
+            # pose_habitat = pose_normal_to_habitat(pose_normal)
+            p_h = world_T_camera[:3, 3]
+            h_q_c = R.from_matrix(world_T_camera[:3, :3]).as_quat()
+        else:
+            w_q_c = R.from_matrix(world_T_camera[:3, :3]).as_quat()
+            w_q_b, p_b = _transform_to_body(w_q_c, world_T_camera[:3, 3])
+            h_q_c, p_h = _transform_to_habitat(w_q_b, p_b)
 
         new_state = habitat_sim.AgentState()
         new_state.position = magnum.Vector3(p_h[0], p_h[1], p_h[2])
@@ -633,34 +703,52 @@ class HabitatInterface:
         self._sim.agents[0].set_state(new_state)
         self._obs = self._sim.get_sensor_observations()
         self._labels = None
-    
-    def set_pose_habitat(self, pos, quat):
-        new_state = habitat_sim.AgentState()
-        new_state.position = magnum.Vector3(pos[0], pos[1], pos[2])
-        new_state.rotation = quat
-        self._sim.agents[0].set_state(new_state)
-        self._obs = self._sim.get_sensor_observations()
-        self._labels = None
 
-    def get_state(self):
+    def get_heading_angle(self):
+        agent = self._sim.get_agent(0)
+        current_quat = agent.get_state().rotation
+        
+        quat_camera_tilt = quat_from_angle_axis(self._camera_tilt, np.array([1, 0, 0]))
+        quat_heading_xyzw = quat_to_coeffs(current_quat*quat_camera_tilt.inverse())
+        heading_angle = 2 * np.arctan2(quat_heading_xyzw[1], quat_heading_xyzw[3])
+        # heading_angle = R.from_quat(quat_to_coeffs(agent.get_state().rotation)).as_euler('xyz', degrees=False)[1]
+        return heading_angle
+    
+    def get_state(self, is_eqa=False):
         agent = self._sim.get_agent(0)  # Assuming agent ID 0
         current_pos = agent.get_state().position
         current_quat_wxyz = agent.get_state().rotation
 
-        quat_xyzw, pos = _transform_from_habitat(quat_to_coeffs(current_quat_wxyz), np.array(current_pos))
-        current_quat_xyzw, current_pos = _transform_from_body(quat_xyzw, pos)
-        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+        if is_eqa:
+            pose = np.eye(4)
+            pose[:3, :3] = R.from_quat(quat_to_coeffs(current_quat_wxyz)).as_matrix()
+            pose[:3, 3] = current_pos
+            pose_normal = pose_habitat_to_normal(pose)
+            pose_tsdf = pose_normal_to_tsdf(pose_normal)
+
+            current_pos = pose_normal[:3, 3]
+            current_quat_xyzw = R.from_matrix(pose_normal[:3, :3]).as_quat()
+            current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+        else:
+            quat_xyzw, pos = _transform_from_habitat(quat_to_coeffs(current_quat_wxyz), np.array(current_pos))
+            current_quat_xyzw, current_pos = _transform_from_body(quat_xyzw, pos)
+            current_quat_wxyz = np.roll(current_quat_xyzw, 1)
         return current_pos, current_quat_wxyz
 
-    def get_scene_size(self):
-        scene_bnds = self.pathfinder.get_bounds()
-        scene_lower_bnds_normal = pos_habitat_to_normal(scene_bnds[0])
-        scene_upper_bnds_normal = pos_habitat_to_normal(scene_bnds[1])
-        scene_size = np.abs(
-            np.prod(scene_upper_bnds_normal[:2] - scene_lower_bnds_normal[:2])
-        )
-        return scene_size
-
+    def get_camera_pos(self, is_eqa=False):
+        if is_eqa:
+            pose_cam = get_cam_pose_tsdf(self.get_depth_sensor_state())
+            current_pos = pose_cam[:3, 3]
+            q_xyzw = R.from_matrix(pose_cam[:3, :3]).as_quat()
+            current_quat_wxyz = np.roll(q_xyzw, 1)
+        else:
+            pass
+        return current_pos, current_quat_wxyz
+    
+    def get_depth_sensor_state(self):
+        agent = self._sim.get_agent(0)
+        return agent.get_state().sensor_states[str(habitat_sim.SensorType.DEPTH)]
+    
     @property
     def colormap(self):
         """Get colormap between labels and semantic colors."""

@@ -2,3 +2,7 @@ cmake>=3.14
 ninja
 catkin_pkg
 empy
+trimesh
+termcolor
+scikit-fmm
+yacs

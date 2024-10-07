@@ -4,6 +4,9 @@ import numpy as np
 import click
 import rerun as rr
 import rerun.blueprint as rrb
+from hydra_python.frontier_mapping_eqa.utils import get_cam_pose_tsdf, pos_habitat_to_normal
+from voxel_mapping import Observations
+import threading, time
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -94,31 +97,30 @@ def hydra_get_object_place_nodes(pipeline):
 #     else:
 #         return []
 
-def is_relevant_frontier(frontier_node_positions, agent_pos):
-    frontier_node_positions = frontier_node_positions.reshape(-1,3)
-    thresh_low = agent_pos[2] - 0.6
-    thresh_high = agent_pos[2] + 0.3
-    in_plane = np.logical_and((frontier_node_positions[:,2] < thresh_high), (frontier_node_positions[:,2] > thresh_low))
-    nearby = np.linalg.norm(frontier_node_positions - agent_pos, axis=-1) < 3.0
-    return np.logical_and(in_plane, nearby)
 
 def hydra_output_callback(pipeline, visualizer):
     """Show graph."""
     if visualizer:
         visualizer.update_graph(pipeline.graph)
 
-def _take_step(pipeline, data, pose, segmenter, image_viz):
+def _take_step(pipeline, data, pose, segmenter, image_viz, is_eqa=False):
     timestamp, world_t_body, q_wxyz = pose
     q_xyzw = np.roll(q_wxyz, -1) #changing to xyzw format
 
     world_T_body = np.eye(4)
     world_T_body[:3, 3] = world_t_body
     world_T_body[:3, :3] = R.from_quat(q_xyzw).as_matrix()
-    data.set_pose(timestamp, world_T_body)
+    data.set_pose(timestamp, world_T_body, is_eqa=is_eqa)
 
     labels = segmenter(data.rgb) if segmenter else data.labels
     if image_viz:
         image_viz.show(data.colormap(labels))
+
+    if is_eqa:
+        pose_cam = get_cam_pose_tsdf(data.get_depth_sensor_state())
+        world_t_body = pose_cam[:3, 3]
+        q_xyzw = R.from_matrix(pose_cam[:3, :3]).as_quat()
+        q_wxyz = np.roll(q_xyzw, 1)
 
     pipeline.step(timestamp, world_t_body, q_wxyz, data.depth, labels, data.rgb)
 
@@ -136,6 +138,7 @@ def run(
     suffix=' ',
     rr_logger=None,
     vlm_planner=None,
+    is_eqa=False,
 ):
     """Do stuff."""
     image_viz = ImageVisualizer() if show_images else None
@@ -149,7 +152,7 @@ def run(
                 # We can change this directory when we determine how we want to save out the gifs at the end
                 pipeline.graph.save(output_path / "dsg.json", False)
                 pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
-                _take_step(pipeline, data, pose, segmenter, image_viz)
+                _take_step(pipeline, data, pose, segmenter, image_viz, is_eqa=is_eqa)
                 if step_callback:
                     step_callback(pipeline, visualizer)
     else:
@@ -157,14 +160,16 @@ def run(
             pipeline.graph.save(output_path / "dsg.json", False)
             pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
 
-            _take_step(pipeline, data, pose, segmenter, image_viz)
+            _take_step(pipeline, data, pose, segmenter, image_viz, is_eqa=is_eqa)
             imgs_colormap.append(data.colormap(data.labels))
             imgs_labels.append(data.labels)
             imgs_rgb.append(data.rgb)
 
-            agent_pos, agent_quat_wxyz = data.get_state()
+            agent_pos, agent_quat_wxyz = data.get_state(is_eqa=is_eqa)
             agent_positions.append(agent_pos)
             agent_quats_wxyz.append(agent_quat_wxyz)
+
+            camera_pos, camera_quat_wxyz = data.get_camera_pos(is_eqa=is_eqa)
             mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
             # node_info = hydra_get_object_place_nodes(pipeline)
             # inplane_frontier_node_positions = get_in_plane_frontier_nodes(node_info['frontier_node_positions'], agent_positions[-1])
@@ -175,6 +180,7 @@ def run(
                 rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
                 rr_logger.log_agent_data(agent_positions)
                 rr_logger.log_agent_tf(agent_pos, agent_quat_wxyz)
+                rr_logger.log_camera_tf(camera_pos, camera_quat_wxyz)
                 rr_logger.log_img_data(data)
                 rr_logger.step()
 
@@ -205,3 +211,95 @@ def run(
     imageio.mimsave(output_path / f'images_hm3d_labeled_frame_{suffix}s.gif', labeled_frames)
 
     #rr.shutdown()
+
+def run_eqa(
+    pipeline,
+    habitat_data,
+    pose_source,
+    segmenter=None,
+    step_callback=hydra_output_callback,
+    output_path=None,
+    rr_logger=None,
+    vlm_planner=None,
+    tsdf_planner=None,
+    voxel_space=None,
+):
+
+    agent_positions, agent_quats_wxyz = [], []
+    step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
+    for pose in pose_source:
+        pipeline.graph.save(output_path / "dsg.json", False)
+        pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
+
+        start = time.time()
+        _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
+        step_time += time.time()-start
+
+        agent_pos, agent_quat_wxyz = habitat_data.get_state(is_eqa=True)
+        agent_positions.append(agent_pos)
+        agent_quats_wxyz.append(agent_quat_wxyz)
+        camera_pos, camera_quat_wxyz = habitat_data.get_camera_pos(is_eqa=True)
+        mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
+
+        cam_pose_tsdf = get_cam_pose_tsdf(habitat_data.get_depth_sensor_state())
+        pts_normal = pos_habitat_to_normal(pose[1])
+
+        if tsdf_planner:
+            tsdf_planner.update(
+                habitat_data.rgb,
+                habitat_data.depth,
+                pts_normal,
+                cam_pose_tsdf,
+            )
+            frontier_nodes = tsdf_planner.frontier_to_sample_normal
+            
+        if voxel_space:
+            start = time.time()
+            obs = Observations(
+                gps=pts_normal[:2],
+                compass=habitat_data.get_heading_angle(),
+                camera_pose=cam_pose_tsdf,
+                rgb=habitat_data.rgb,
+                depth=habitat_data.depth,
+                xyz=None,
+                camera_K=voxel_space.cam_intr,
+            )
+            voxel_space.voxel_map.add_obs(obs)
+            frontier_update_time += time.time()-start
+
+            # start = time.time()
+            # voxel_space.update()
+            # voxel_log_time += time.time()-start
+
+            # frontier_nodes = voxel_space.outside_frontier_points
+
+        # if vlm_planner:
+        #     start = time.time()
+        #     vlm_planner.sg_sim.update(frontier_nodes)
+        #     sg_update_time += time.time()-start
+
+        if rr_logger:
+            start = time.time()
+            rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
+            rr_logger.log_agent_data(agent_positions)
+            rr_logger.log_agent_tf(agent_pos, agent_quat_wxyz)
+            rr_logger.log_camera_tf(camera_pos, camera_quat_wxyz)
+            rr_logger.log_img_data(habitat_data)
+            mesh_log_time += time.time()-start
+            # if voxel_space:
+            #     rr_logger.log_clear("world/voxel")
+                # rr_logger.log_voxel_map(voxel_space)
+            rr_logger.step()
+
+        if step_callback:
+            step_callback(pipeline, None)
+    if voxel_space:   
+        start = time.time()
+        voxel_space.update()
+        voxel_log_time += time.time()-start
+        frontier_nodes = voxel_space.outside_frontier_points
+    if vlm_planner:
+        start = time.time()
+        vlm_planner.sg_sim.update(frontier_nodes)
+        sg_update_time += time.time()-start
+    print(f"{step_time=} {frontier_update_time=} {voxel_log_time=} {sg_update_time=} {mesh_log_time=}")

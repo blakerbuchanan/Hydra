@@ -2,18 +2,6 @@
 	"folders": [
 		{
 			"path": "../.."
-		},
-		{
-			"path": "../../../temp_blake"
-		},
-		{
-			"path": "../../../temp_test_plt"
-		},
-		{
-			"path": "../../../temp_test"
-		},
-		{
-			"path": "../../../temp_test2"
 		}
 	],
 	"settings": {}

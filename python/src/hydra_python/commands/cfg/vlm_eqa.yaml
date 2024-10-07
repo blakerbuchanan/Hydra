@@ -1,13 +1,14 @@
 # General
 seed: 42
-exp_name: vlm_sg_eqa_exp
+exp_name: vlm_sg_stretch_tsdf_random
+# exp_name: vlm_sg_explore_eqa_tsdf_planner
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 
 data:
   question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'
   init_pose_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/scene_init_poses.csv'
   semantic_annot_data_path: '/mnt/hdd1/saumyas/data/semnav/hm3d-train-semantic-annots-v0.2'
-  scene_data_path: '/home/saumyas/catkin_ws_hydra/src/data/scene_datasets/hm3d/train'
+  scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
 
 logging:
   output_parent_dir: results
@@ -22,14 +23,36 @@ habitat:
   scene_type: 'hm3d'
   img_width: 640
   img_height: 480
-  camera_height: 1.5
-  camera_tilt_deg: -30
+  camera_height: 0.5 # 1.5
+  camera_tilt_deg: 0 #-30
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
+
 
 hydra:
   glog_level: 0
   verbosity: 0
   label_space: 'hm3d'
   config_verbosity: 0
+
+frontier_mapping:
+  tsdf_grid_size: 0.1
+  init_clearance: 0.5
+  img_width: ${habitat.img_width}
+  img_height: ${habitat.img_height}
+  margin_w_ratio: 0.25
+  margin_h_ratio: 0.6
+  height_offset: 0.4
+  visual_prompt:
+    cluster_threshold: 1.0
+    num_prompt_points: 3
+    num_max_unoccupied: 300
+    min_points_for_clustering: 3
+    point_min_dist: 2
+    point_max_dist: 10
+    cam_offset: 0.6
+    min_num_prompt_points: 2
+    circle_radius: 18
+    frontier_min_neighbors: 3
+    frontier_max_neighbors: 4

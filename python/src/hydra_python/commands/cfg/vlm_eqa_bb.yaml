@@ -1,6 +1,6 @@
 # General
 seed: 42
-exp_name: vlm_sg_eqa_exp
+exp_name: vlm_sg_eqa_exp2
 output_path: /workspace/src/hydra/outputs/${exp_name}
 
 data:
