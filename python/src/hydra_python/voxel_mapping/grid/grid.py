@@ -26,7 +26,7 @@ class GridParams:
         resolution: float,
         device: torch.device = torch.device("cpu"),
     ):
-
+        self.device = device
         if grid_size is not None:
             self.grid_size = [grid_size[0], grid_size[1]]
         else:
@@ -34,21 +34,21 @@ class GridParams:
 
         # Track the center of the grid - (0, 0) in our coordinate system
         # We then just need to update everything when we want to track obstacles
-        self.grid_origin = Tensor(self.grid_size + [0], device=device) // 2
+        self.grid_origin = torch.tensor(self.grid_size + [0], device=device) // 2
         self.resolution = resolution
         # Used to track the offset from our observations so maps dont use too much space
 
         # Used for tensorized bounds checks
-        self._grid_size_t = Tensor(self.grid_size, device=device)
+        self._grid_size_t = torch.tensor(self.grid_size, device=device)
 
     def xy_to_grid_coords(self, xy: torch.Tensor) -> Optional[np.ndarray]:
         """convert xy point to grid coords"""
         assert xy.shape[-1] == 2, "coords must be Nx2 or 2d array"
         # Handle conversion between world (X, Y) and grid coordinates
         if isinstance(xy, np.ndarray):
-            xy = torch.from_numpy(xy).float()
+            xy = torch.from_numpy(xy).float().to(self.device)
         grid_xy = (xy / self.resolution) + self.grid_origin[:2]
-        if torch.any(grid_xy >= self._grid_size_t) or torch.any(grid_xy < torch.zeros(2)):
+        if torch.any(grid_xy >= self._grid_size_t) or torch.any(grid_xy < torch.zeros(2).to(self.device)):
             return None
         else:
             return grid_xy

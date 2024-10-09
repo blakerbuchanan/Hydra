@@ -56,7 +56,7 @@ class Footprint:
         l1_offset = int(np.ceil(self.length_offset / resolution))
         w0_offset = int(np.floor(self.width_offset / resolution))
         w1_offset = int(np.ceil(self.width_offset / resolution))
-        mask = torch.zeros((size, size))
+        mask = torch.zeros((size, size)).to(device)
         center = size // 2
         if size % 2 == 0:
             size += 1

@@ -104,8 +104,8 @@ def plan_to_goal(
     print("\n----------- Planning to frontier -----------")
     print("Starting at:", start)
     print("Start is valid:", start_is_valid)
-    if not start_is_valid:
-        return PlanResult(False, reason="invalid start state")
+    # if not start_is_valid:
+    #     return PlanResult(False, reason="invalid start state")
 
     print("       Start:", start)
     print("       Goal:", goal)

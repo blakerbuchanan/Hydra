@@ -20,7 +20,7 @@ to allow operations to be done on the GPU for speed.
 
 from typing import List, Optional, Union
 
-import cv2
+import cv2, gc
 import numpy as np
 import torch
 from torch import Tensor
@@ -71,7 +71,8 @@ def unproject_masked_depth_to_xyz_coordinates(
         XYZ coordinates, with shape (N, 3) where N is the number of points in
         the depth image which are unmasked
     """
-
+    gc.collect()
+    torch.cuda.empty_cache()
     batch_size, _, height, width = depth.shape
     if mask is None:
         mask = torch.full_like(depth, fill_value=False, dtype=torch.bool)

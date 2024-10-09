@@ -483,7 +483,7 @@ def scatter3d(voxel_indices: Tensor, weights: Tensor, grid_dimensions: List[int]
     # Compute voxel indices for each point
     # voxel_indices = (points / voxel_size).long().clamp(min=0, max=torch.tensor(grid_size) - 1)
     voxel_indices = voxel_indices.clamp(
-        min=torch.zeros(3), max=torch.tensor(grid_dimensions) - 1
+        min=torch.zeros(3, device=weights.device), max=torch.tensor(grid_dimensions, device=weights.device) - 1
     ).long()
 
     # Create empty voxel grid
@@ -573,6 +573,9 @@ def occupancy_map_to_3d_points(
 
     if isinstance(grid_center, torch.Tensor):
         grid_center = grid_center.cpu().numpy()
+    
+    if isinstance(occupancy_map, torch.Tensor):
+        occupancy_map = occupancy_map.cpu().numpy()
 
     indices = occupancy_map_to_indices(occupancy_map)
     points = (indices - grid_center) * grid_resolution + offset

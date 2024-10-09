@@ -8,7 +8,7 @@ class SceneGraphSim:
     def __init__(self, sg_path, pipeline, rr_logger, frontier_nodes):
         self._sg_path = sg_path / "filtered_dsg.json"
         self.pipeline = pipeline
-        self.filter_out_objects = ['wall, floor', 'ceiling', 'door_frame']
+        self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
         self.rr_logger = rr_logger
         self.update(frontier_nodes)
     
@@ -103,19 +103,19 @@ class SceneGraphSim:
                     # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
                     self._frontier_node_ids.append(nodeid)
             
-            # DONT ADD FRONTIER NODES
-            if 'f' in node.id.category.lower():
+            # DONT ADD FRONTIER OR PLACE NODES
+            if 'f' in node.id.category.lower() or 'p' in node.id.category.lower():
                 continue
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
         bb_info = {
-                'object_node_positions': object_node_positions,
-                'bb_half_sizes': bb_half_sizes,
-                'bb_centroids': bb_centroids,
-                'bb_mat3x3': bb_mat3x3,
-                'bb_labels': bb_labels,
-                'bb_colors': bb_colors,
-            }
+            'object_node_positions': object_node_positions,
+            'bb_half_sizes': bb_half_sizes,
+            'bb_centroids': bb_centroids,
+            'bb_mat3x3': bb_mat3x3,
+            'bb_labels': bb_labels,
+            'bb_colors': bb_colors,
+        }
         
         self.rr_logger.log_bb_data(bb_info)
         ## Adding edges

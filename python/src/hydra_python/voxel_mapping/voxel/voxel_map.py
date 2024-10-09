@@ -38,6 +38,7 @@ from voxel_mapping.utils.morphology import (
 )
 from voxel_mapping.utils.point_cloud import create_visualization_geometries, numpy_to_pcd
 from voxel_mapping.utils.voxel import occupancy_map_to_3d_points
+from hydra_python.frontier_mapping_eqa.geom import fps
 
 
 class SparseVoxelMapNavigationSpace(XYT):
@@ -56,12 +57,20 @@ class SparseVoxelMapNavigationSpace(XYT):
         orientation_resolution: int = 64,
         dilate_frontier_size: int = 12,
         dilate_obstacle_size: int = 2,
+        min_points_for_clustering: int = 3,
+        num_clusters: int = 10,
+        cluster_threshold: float = 1.0,
         extend_mode: str = "separate",
         cam_intr=None,
     ):
         self.step_size = step_size
         self.rotation_step_size = rotation_step_size
         self.voxel_map = voxel_map
+
+        self.min_points_for_clustering = min_points_for_clustering
+        self.num_clusters = num_clusters
+        self.cluster_threshold = cluster_threshold
+
         self.create_collision_masks(orientation_resolution)
         self.extend_mode = extend_mode
         if grid is None:
@@ -88,7 +97,7 @@ class SparseVoxelMapNavigationSpace(XYT):
                 .unsqueeze(0)
                 .float(),
                 requires_grad=False,
-            )
+            ).to(self.voxel_map.device)
         else:
             self.dilate_explored_kernel = None
         if dilate_obstacle_size > 0:
@@ -98,7 +107,7 @@ class SparseVoxelMapNavigationSpace(XYT):
                 .unsqueeze(0)
                 .float(),
                 requires_grad=False,
-            )
+            ).to(self.voxel_map.device)
         else:
             self.dilate_obstacles_kernel = None
 
@@ -133,7 +142,7 @@ class SparseVoxelMapNavigationSpace(XYT):
         for i in range(orientation_resolution):
             theta = i * 2 * np.pi / orientation_resolution
             mask = self._footprint.get_rotated_mask(
-                self.voxel_map.grid_resolution, angle_radians=theta
+                self.voxel_map.grid_resolution, angle_radians=theta, device=self.voxel_map.device
             )
             if show_all:
                 plt.subplot(8, 8, i + 1)
@@ -239,6 +248,8 @@ class SparseVoxelMapNavigationSpace(XYT):
         if theta >= 2 * np.pi:
             theta -= 2 * np.pi
         assert theta >= 0 and theta <= 2 * np.pi, "only angles between 0 and 2*PI allowed"
+        if isinstance(theta, torch.Tensor):
+            theta = theta.cpu().float()
         theta_idx = np.round((theta / (2 * np.pi) * self._orientation_resolution) - 0.5)
         if theta_idx == self._orientation_resolution:
             theta_idx = 0
@@ -260,7 +271,7 @@ class SparseVoxelMapNavigationSpace(XYT):
         """Check to see if state is valid; i.e. if there's any collisions if mask is at right place"""
         assert len(state) == 3
         if isinstance(state, np.ndarray):
-            state = torch.from_numpy(state).float()
+            state = torch.from_numpy(state).float().to(self.voxel_map.device)
         ok = self.voxel_map.xyt_is_safe(state[:2])
         if not ok:
             # This was
@@ -524,7 +535,7 @@ class SparseVoxelMapNavigationSpace(XYT):
         #     ),
         # )
 
-        kernel = self._get_kernel(expand_size)
+        kernel = self._get_kernel(expand_size).to(self.voxel_map.device)
         if kernel is not None:
             expanded_frontier = binary_dilation(
                 frontier_edges.float().unsqueeze(0).unsqueeze(0),
@@ -543,7 +554,7 @@ class SparseVoxelMapNavigationSpace(XYT):
         #     ),
         # )
 
-        outside_frontier = expanded_frontier & ~explored & ~obstacles 
+        outside_frontier = expanded_frontier & ~explored
         # rr.log(
         #     "world/voxel/outside_frontier",
         #     rr.Points3D(
@@ -592,12 +603,12 @@ class SparseVoxelMapNavigationSpace(XYT):
         """
         assert len(xyt) == 2 or len(xyt) == 3, f"xyt must be of size 2 or 3 instead of {len(xyt)}"
 
-        frontier, outside_frontier, traversible = self.get_frontier(
+        obstacles, explored, frontier, outside_frontier, traversible = self.get_frontier(
             expand_size=expand_size, debug=debug
         )
 
         # from scipy.ndimage.morphology import distance_transform_edt
-        m = np.ones_like(traversible)
+        m = np.ones_like(traversible.cpu())
         start_x, start_y = self.grid.xy_to_grid_coords(xyt[:2]).int().cpu().numpy()
         if verbose or debug:
             print("--- Coordinates ---")
@@ -605,7 +616,7 @@ class SparseVoxelMapNavigationSpace(XYT):
             print(f"{start_x=}, {start_y=}")
 
         m[start_x, start_y] = 0
-        m = np.ma.masked_array(m, ~traversible)
+        m = np.ma.masked_array(m, ~traversible.cpu())
 
         if not self.has_zero_contour(m):
             if verbose:
@@ -649,9 +660,9 @@ class SparseVoxelMapNavigationSpace(XYT):
                 continue
             prev_dist = dist
 
-            point_grid_coords = torch.FloatTensor([[x, y]])
+            point_grid_coords = torch.FloatTensor([[x, y]]).to(outside_frontier.device)
             outside_point = find_closest_point_on_mask(outside_frontier, point_grid_coords)
-            outside_point = find_closest_point_on_mask(frontier, torch.FloatTensor([[outside_point[0], outside_point[1]]]))
+            outside_point = find_closest_point_on_mask(frontier, torch.FloatTensor([[outside_point[0], outside_point[1]]]).to(frontier.device))
 
             if outside_point is None:
                 print(
@@ -683,7 +694,7 @@ class SparseVoxelMapNavigationSpace(XYT):
 
             outside_point_xy = self.grid.grid_coords_to_xy(outside_point)
 
-            xyt = torch.zeros(3)
+            xyt = torch.zeros(3).to(outside_frontier.device)
             xyt[:2] = point
             # xyt[:2] = outside_point_xy
             xyt[2] = theta
@@ -849,6 +860,7 @@ class SparseVoxelMapNavigationSpace(XYT):
                 is_map=False,
                 height=0.1,
                 offset=xyt[:2],
+                device=self.voxel_map.device
             )
 
         if instances and len(self.voxel_map.instances) > 0:
@@ -927,30 +939,59 @@ class SparseVoxelMapNavigationSpace(XYT):
         state[-1] = np.random.random() * 2 * np.pi
         return state
     
-    def update(self):
+    def cluster_frontiers(self):
+        # # cluster, or return none
+        # points_to_cluster = self.outside_frontier_points
+        # if len(self.outside_frontier_points) < self.min_points_for_clustering:
+        #     points_to_cluster = frontier_points
+
+        clusters = fps(self.outside_frontier_points, self.num_clusters)
+
+        # merge clusters if too close to each other
+        clusters_new = np.empty((0, 3))
+        for cluster in clusters:
+            if len(clusters_new) == 0:
+                clusters_new = np.vstack((clusters_new, cluster))
+            else:
+                clusters_array = np.array(clusters_new)
+                dist = np.sqrt(np.sum((clusters_array - cluster) ** 2, axis=1))
+                if np.min(dist) > self.cluster_threshold:
+                    clusters_new = np.vstack((clusters_new, cluster))
+        return clusters_new
+
+    def update(self, z=0.):
         rr.log("world/voxel", rr.Clear(recursive=True))
 
-        # points, _, _, rgb = self.voxel_map.voxel_pcd.get_pointcloud()
-        # if rgb is None:
-        #     return
+        points, _, _, rgb = self.voxel_map.voxel_pcd.get_pointcloud()
+        if rgb is None:
+            return
 
-        # rr.log(
-        #     "world/voxel/point_cloud",
-        #     rr.Points3D(positions=points, radii=np.ones(rgb.shape[0]) * 0.01, colors=np.int64(rgb)),
-        # )
+        rr.log(
+            "world/voxel/point_cloud",
+            rr.Points3D(positions=points.detach().cpu().numpy(), radii=np.ones(rgb.shape[0]) * 0.01, colors=np.int64(rgb.detach().cpu().numpy())),
+        )
 
         grid_origin = self.voxel_map.grid_origin
-        obstacles, explored, frontier, outside_frontier, traversible = self.get_frontier()
-
-        # Get obstacles and explored points
         grid_resolution = self.voxel_map.grid_resolution
-        obs_points = np.array(occupancy_map_to_3d_points(obstacles, grid_origin, grid_resolution))
 
-        # Get explored points
+        obstacles, explored, frontier, outside_frontier, traversible = self.get_frontier()
+        
+        obs_points = np.array(occupancy_map_to_3d_points(obstacles, grid_origin, grid_resolution))
+        obs_points[:,2] = z
+        
         explored_points = np.array(occupancy_map_to_3d_points(explored, grid_origin, grid_resolution))
+        explored_points[:,2] = z
+
         frontier_points = np.array(occupancy_map_to_3d_points(frontier, grid_origin, grid_resolution))
+        frontier_points[:,2] = z
+
         self.outside_frontier_points = np.array(occupancy_map_to_3d_points(outside_frontier, grid_origin, grid_resolution))
+        self.outside_frontier_points[:,2] = z
+
         traversible_points = np.array(occupancy_map_to_3d_points(traversible, grid_origin, grid_resolution))
+        traversible_points[:,2] = z
+
+        # clustered_frontiers = self.cluster_frontiers()
 
         rr.log(
             "world/voxel/obstacles",
@@ -990,5 +1031,14 @@ class SparseVoxelMapNavigationSpace(XYT):
                 positions=traversible_points,
                 radii=0.04,
                 colors=[0, 0, 255],
+            ),
+        )
+
+        rr.log(
+            "world/voxel/clustered_frontiers",
+            rr.Points3D(
+                positions=clustered_frontiers,
+                radii=0.08,
+                colors=[0, 150, 0],
             ),
         )

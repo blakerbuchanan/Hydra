@@ -1,8 +1,9 @@
 from omegaconf import OmegaConf
 from tqdm import tqdm
 import numpy as np
+import click 
 
-from voxel_mapping.voxel import SparseVoxelMap, SparseVoxelMapNavigationSpace, plan_to_frontier
+from voxel_mapping.voxel import SparseVoxelMap, SparseVoxelMapNavigationSpace, plan_to_frontier, plan_to_goal
 from voxel_mapping import get_parameters, Observations
 from voxel_mapping.motion.algo import RRTConnect, Shortcut, SimplifyXYT
 
@@ -57,6 +58,7 @@ def main(habitat_cfg, mapping_cfg_path):
             parameters,
             voxel_size=parameters['voxel_size'],
             use_instance_memory=False,
+            map_2d_device="cuda:0",
             rr_logger=rr_logger,
         )
 
@@ -67,6 +69,9 @@ def main(habitat_cfg, mapping_cfg_path):
             rotation_step_size=parameters["motion_planner"]["rotation_step_size"],
             dilate_frontier_size=parameters["motion_planner"]["frontier"]["dilate_frontier_size"],
             dilate_obstacle_size=parameters["motion_planner"]["frontier"]["dilate_obstacle_size"],
+            min_points_for_clustering=parameters["motion_planner"]["frontier"]["min_points_for_clustering"],
+            num_clusters=parameters["motion_planner"]["frontier"]["num_clusters"],
+            cluster_threshold=parameters["motion_planner"]["frontier"]["cluster_threshold"],
             grid=voxel_map.grid,
             cam_intr=cam_intr
         )
@@ -91,11 +96,18 @@ def main(habitat_cfg, mapping_cfg_path):
             voxel_space=space,
         )
 
-        for i in range(10):
+        for i in range(50):
             pts_normal = habitat_data.get_state(is_eqa=True)[0]
             current_heading = habitat_data.get_heading_angle()
             base_pose = np.append(pts_normal[:2], current_heading)
-            res, goal = plan_to_frontier(base_pose, planner, space, verbose=True)
+
+            idx = np.random.choice(len(space.outside_frontier_points))
+            goal = space.outside_frontier_points[idx]
+            res = plan_to_goal(base_pose, goal, planner, space, verbose=True)
+            if not res.success:
+                continue
+
+            # res, goal = plan_to_frontier(base_pose, planner, space, verbose=True)
             path = np.array([pt.state for pt in res.trajectory])
             path_xyz = np.concatenate([path[:,:2], np.full((path.shape[0],1), pts_normal[2])],1)
             
@@ -103,6 +115,7 @@ def main(habitat_cfg, mapping_cfg_path):
             rr_logger.log_target_poses(np.append(goal[:2], pts_normal[2]))
             poses = habitat_data.get_trajectory_from_path_angles_habitat_frame(path_xyz, path[:,2], current_heading, habitat_cfg.habitat.camera_tilt_deg)
             current_heading = path[-1,2]
+            click.secho(f"Executing plan of length {len(poses)}.",fg="green",)
             hydra.run_eqa(
                 pipeline,
                 habitat_data,

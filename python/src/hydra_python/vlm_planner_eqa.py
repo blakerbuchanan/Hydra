@@ -7,6 +7,10 @@ import hydra_python as hydra
 
 from openai import OpenAI
 
+# client = OpenAI(
+#     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
+#     project='proj_rZU06lthKefMBx9rE3YGD2Um',
+# )
 client = OpenAI()
 
 from pydantic import BaseModel
@@ -41,7 +45,8 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action,
         answer: Confidence_check
 
     class PlannerResponse(BaseModel):
-        steps: List[Union[Goto_visited_node_step, Goto_frontier_node_step, Done_step]]
+        # steps: List[Union[Goto_visited_node_step, Goto_frontier_node_step, Done_step]]
+        steps: List[Goto_frontier_node_step]
         answer: Answer
         confidence: Confidence
         # final_full_plan: str
@@ -89,21 +94,34 @@ class VLMPLannerEQA:
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
         return Goto_visited_node_action, Goto_frontier_node_action, Answer_options
     
+    # @property
+    # def agent_role_prompt(self):
+    #     prompt = "You are an excellent graph planning agent. \
+    #         You are given a scene graph representation (in json format) of the areas of the environment you have explored so far. \
+    #         Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
+    #         Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
+    #         Frontier nodes and visited nodes are empty spaces in the scene where the agent can navigate to.\
+    #         Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
+    #         Edges among frontier nodes and visited nodes tell which empty spaces are connected to each other, hence can be reached from one another.\
+    #         You are tasked with 'exploring' a previously unseen enviornment to Answer a multiple-choice question about the environment. Keep exploring until you can confidently answer the question. \
+    #         You are also required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
+    #         Finally, You can take three kinds of steps in the environment: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
+    #         1) Goto_visited_node_step: Navigate to a visited node. Scene graph may or may not be augmented depending upon how well the region was explored when visited before \n \
+    #         2) Goto_frontier_node_step: Navigate to a frontier (unexplored) node. Going to frontier node will proide the agent with new observations and the scene graph will be augmented. \n \
+    #         3) Done_step: Check the current state and scene graph carefully. If the question can be answered with high confidence, then only take the done action else take one of the other actions. \n "
+    #     return prompt
+    
+    
     @property
     def agent_role_prompt(self):
-        prompt = "You are an excellent graph planning agent. \
-            You are given a scene graph representation (in json format) of the areas of the environment you have explored so far. \
+        prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment. You need to keep exploring until you can confidently answer the question.\
+            As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
             Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-            Frontier nodes and visited nodes are empty spaces in the scene where the agent can navigate to.\
             Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
-            Edges among frontier nodes and visited nodes tell which empty spaces are connected to each other, hence can be reached from one another.\
-            You are tasked with 'exploring' a previously unseen enviornment to Answer a multiple-choice question about the environment. Keep exploring until you can confidently answer the question. \
-            You are also required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
-            Finally, You can take three kinds of steps in the environment: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
-            1) Goto_visited_node_step: Navigate to a visited node. Scene graph may or may not be augmented depending upon how well the region was explored when visited before \n \
-            2) Goto_frontier_node_step: Navigate to a frontier (unexplored) node. Going to frontier node will proide the agent with new observations and the scene graph will be augmented. \n \
-            3) Done_step: Check the current state and scene graph carefully. If the question can be answered with high confidence, then only take the done action else take one of the other actions. \n "
+            You are required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
+            To explore unseen parts of the environment choose a frontier node to goto using Goto_frontier_node_step.  \n \
+            Doing this will Navigate to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented."
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -133,8 +151,8 @@ class VLMPLannerEQA:
             try:
                 start = time.time()
                 completion = client.beta.chat.completions.parse(
-                    # model="gpt-4o-mini",
-                    model="gpt-4o-2024-08-06",
+                    model="gpt-4o-mini",
+                    # model="gpt-4o-2024-08-06",
                     messages=messages,
                     response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options),
                 )

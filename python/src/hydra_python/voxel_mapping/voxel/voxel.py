@@ -11,12 +11,13 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import copy
+import copy, time
 import pickle
 import timeit
 from collections import namedtuple
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+import gc 
 
 import numpy as np
 import open3d as open3d
@@ -184,6 +185,13 @@ class SparseVoxelMap(object):
         self.obs_min_density = obs_min_density
         self.prune_detected_objects = prune_detected_objects
 
+        # Set the device we use for things here
+        self.map_2d_device = map_2d_device
+        if device is not None:
+            self.device = device
+        else:
+            self.device = self.map_2d_device
+
         # Smoothing kernel params
         self.smooth_kernel_size = smooth_kernel_size
         if self.smooth_kernel_size > 0:
@@ -193,7 +201,7 @@ class SparseVoxelMap(object):
                 .unsqueeze(0)
                 .float(),
                 requires_grad=False,
-            )
+            ).to(self.device)
         else:
             self.smooth_kernel = None
 
@@ -218,15 +226,9 @@ class SparseVoxelMap(object):
         self.use_instance_memory = use_instance_memory
         self.voxel_kwargs = voxel_kwargs
         self.encoder = encoder
-        self.map_2d_device = map_2d_device
+        
         self._min_points_per_voxel = min_points_per_voxel
         self._rr_logger = rr_logger
-
-        # Set the device we use for things here
-        if device is not None:
-            self.device = device
-        else:
-            self.device = self.map_2d_device
 
         # Create kernel(s) for obstacle dilation over 2d/3d maps
         if self.pad_obstacles > 0:
@@ -236,7 +238,7 @@ class SparseVoxelMap(object):
                 .unsqueeze(0)
                 .float(),
                 requires_grad=False,
-            )
+            ).to(self.device)
         else:
             self.dilate_obstacles_kernel = None
 
@@ -332,6 +334,9 @@ class SparseVoxelMap(object):
         **kwargs,
     ):
         """Unpack an observation and convert it properly, then add to memory. Pass all other inputs into the add() function as provided."""
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         rgb = self.fix_type(obs.rgb)
         depth = self.fix_type(obs.depth)
         xyz = self.fix_type(obs.xyz)
@@ -405,6 +410,7 @@ class SparseVoxelMap(object):
         # TODO: we should remove the xyz/feats maybe? just use observations as input?
         # TODO: switch to using just Obs struct?
         # Shape checking
+        _t0 = timeit.default_timer()
         assert rgb.ndim == 3 or rgb.ndim == 2, f"{rgb.ndim=}: must be 2 or 3"
         if isinstance(rgb, np.ndarray):
             rgb = torch.from_numpy(rgb)
@@ -459,7 +465,14 @@ class SparseVoxelMap(object):
             median_depth = torch.from_numpy(
                 scipy.ndimage.median_filter(depth, size=self.median_filter_size)
             )
-            median_filter_error = (depth - median_depth).abs()
+            median_filter_error = (depth - median_depth).abs().to(self.device)
+            depth = depth.to(self.device)
+            rgb = rgb.to(self.device)
+            camera_K = camera_K.to(self.device)
+            camera_pose = camera_pose.to(self.device)
+
+
+        _t1 = timeit.default_timer()
 
         # Get full_world_xyz
         if xyz is not None:
@@ -483,6 +496,7 @@ class SparseVoxelMap(object):
             full_world_xyz = full_world_xyz @ pose_correction[:3, :3].T + pose_correction[:3, 3]
 
         # add observations before we start changing things
+        _t2 = timeit.default_timer() # 0.44752979511395097
         self.observations.append(
             Frame(
                 camera_pose,
@@ -501,6 +515,7 @@ class SparseVoxelMap(object):
                 xyz_frame=xyz_frame,
             )
         )
+        _t3 = timeit.default_timer()
 
         valid_depth = torch.full_like(rgb[:, 0], fill_value=True, dtype=torch.bool)
         if depth is not None:
@@ -557,11 +572,15 @@ class SparseVoxelMap(object):
         if self.prune_detected_objects:
             valid_depth = valid_depth & (instance_image == self.background_instance_label)
 
+        _t4 = timeit.default_timer() #0.038976386189460754
+
         # Add to voxel grid
         if feats is not None:
             feats = feats[valid_depth].reshape(-1, feats.shape[-1])
         rgb = rgb[valid_depth].reshape(-1, 3)
         world_xyz = full_world_xyz.view(-1, 3)[valid_depth.flatten()]
+
+        _t5 = timeit.default_timer() # 0.06795481592416763
 
         # TODO: weights could also be confidence, inv distance from camera, etc
         if world_xyz.nelement() > 0:
@@ -572,6 +591,8 @@ class SparseVoxelMap(object):
                 weights=None,
                 min_weight_per_voxel=self._min_points_per_voxel,
             )
+
+        _t6 = timeit.default_timer() # 0.7095439722761512
 
         if self._add_local_radius_points and (
             len(self.observations) < 2 or self._add_local_radius_every_step
@@ -585,6 +606,7 @@ class SparseVoxelMap(object):
                 # Camera only
                 self._update_visited(camera_pose[:3, 3].to(self.map_2d_device))
 
+        _t7 = timeit.default_timer() # 0.00016496190801262856
         # Increment sequence counter
         self._seq += 1
 
@@ -1079,6 +1101,7 @@ class SparseVoxelMap(object):
                     is_map=False,
                     height=0.1,
                     offset=xyt[:2],
+                    device=self.device
                 )
 
         if instances:
@@ -1177,6 +1200,7 @@ class SparseVoxelMap(object):
         encoder = None,
         voxel_size: float = 0.05,
         use_instance_memory: bool = True,
+        map_2d_device: str = "cpu",
         rr_logger=None,
         **kwargs,
     ) -> "SparseVoxelMap":
@@ -1227,6 +1251,7 @@ class SparseVoxelMap(object):
                 "use_visual_feat": parameters.get("use_visual_feat", False),
             },
             prune_detected_objects=parameters.get("prune_detected_objects", False),
+            map_2d_device=map_2d_device,
             rr_logger=rr_logger,
         )
 

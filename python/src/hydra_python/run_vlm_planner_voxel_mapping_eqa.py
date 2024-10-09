@@ -23,8 +23,8 @@ def main(habitat_cfg, mapping_cfg_path):
 
     successes, successes_wo_done = 0, 0
     for question_ind in tqdm(range(len(questions_data))):
-        # if question_ind==0:
-        #     continue
+        if question_ind==0:
+            continue
         question_data = questions_data[question_ind]
         print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
 
@@ -69,6 +69,9 @@ def main(habitat_cfg, mapping_cfg_path):
             rotation_step_size=parameters["motion_planner"]["rotation_step_size"],
             dilate_frontier_size=parameters["motion_planner"]["frontier"]["dilate_frontier_size"],
             dilate_obstacle_size=parameters["motion_planner"]["frontier"]["dilate_obstacle_size"],
+            min_points_for_clustering=parameters["motion_planner"]["frontier"]["min_points_for_clustering"],
+            num_clusters=parameters["motion_planner"]["frontier"]["num_clusters"],
+            cluster_threshold=parameters["motion_planner"]["frontier"]["cluster_threshold"],
             grid=voxel_map.grid,
             cam_intr=cam_intr
         )
