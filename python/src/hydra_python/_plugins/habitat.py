@@ -601,6 +601,44 @@ class HabitatInterface:
         )
         return poses
 
+    def get_trajectory_from_path_habitat_frame2(self, path_normal, current_heading, camera_tilt_deg):
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+        current_quat_xyzw = quat_to_coeffs(agent.get_state().rotation)
+        current_quat_wxyz = np.roll(current_quat_xyzw, 1)
+
+        # desired path is in world frame of eqa
+        desired_path_habitat = pos_normal_to_habitat(path_normal)
+        diff = desired_path_habitat[-1] - desired_path_habitat[0]
+        desired_heading = np.arctan2(-diff[0],-diff[2])
+        desired_quat_habitat_xyzw = _angle_to_rotation_habitat(desired_heading, camera_tilt_deg)
+        desired_quat_habitat_wxyz = np.roll(desired_quat_habitat_xyzw, 1)
+
+        yaw_diff = abs((current_heading - desired_heading + np.pi) % (2 * np.pi) - np.pi)
+        desired_quat_habitat_wxyz, yaw_diff = [], []
+
+        yaw_prev = current_heading
+        pos_prev = current_pos.copy()
+        for i in range(len(desired_path_habitat)):
+            diff = desired_path_habitat[i] - pos_prev
+            desired_heading = np.arctan2(-diff[0],-diff[2])
+            # heading_sample_range = [desired_heading-30*np.pi/180, desired_heading+30*np.pi/180]
+            # desired_heading = np.random.uniform(heading_sample_range[0], heading_sample_range[1])
+            des_quat_xyzw = _angle_to_rotation_habitat(desired_heading, camera_tilt_deg)
+            desired_quat_habitat_wxyz.append(np.roll(des_quat_xyzw, 1))
+            yaw_diff.append(abs((desired_heading - yaw_prev + np.pi) % (2 * np.pi) - np.pi))
+            yaw_prev = desired_heading
+            pos_prev = desired_path_habitat[i].copy()
+
+        desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
+        poses = hydra.Trajectory.from_poses_habitat_yaw(
+            np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), 
+            init_quat_wxyz=current_quat_wxyz,
+            desired_quat_wxyz=desired_quat_habitat_wxyz,
+            yaw_diff=yaw_diff
+        )
+        return poses
+    
     def get_trajectory_from_path_angles_habitat_frame(self, path_normal, angles, current_heading, camera_tilt_deg):
         # desired path is in world frame of eqa
         desired_path_habitat = pos_normal_to_habitat(path_normal)

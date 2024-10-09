@@ -40,7 +40,8 @@ def main(cfg):
             height=cfg.habitat.img_height,
             agent_z_offset=cfg.habitat.agent_z_offset,
             hfov=cfg.habitat.hfov,
-            z_offset=cfg.habitat.z_offset)
+            z_offset=cfg.habitat.z_offset,
+            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
@@ -79,10 +80,11 @@ def main(cfg):
             tsdf_planner=tsdf_planner,
         )
 
-        num_steps = 10
+        num_steps = 30
         for i in range(num_steps):
+            current_heading = habitat_data.get_heading_angle()
             desired_path = tsdf_planner.sample_frontier()
-            poses = habitat_data.get_trajectory_from_path_habitat_frame(desired_path)
+            poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
             hydra.run_eqa(
                 pipeline,
                 habitat_data,

@@ -137,7 +137,6 @@ def main(habitat_cfg, mapping_cfg_path):
                     rr_logger.log_traj_data(path_xyz)
                     rr_logger.log_target_poses(np.append(target_pose[:2], pts_normal[2]))
                     poses = habitat_data.get_trajectory_from_path_angles_habitat_frame(path_xyz, path[:,2], current_heading, habitat_cfg.habitat.camera_tilt_deg)
-                    current_heading = path[-1,2]
                     click.secho(f"Executing plan of length {len(poses)}.",fg="green",)
                     hydra.run_eqa(
                         pipeline,

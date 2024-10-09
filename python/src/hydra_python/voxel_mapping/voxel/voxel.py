@@ -410,6 +410,9 @@ class SparseVoxelMap(object):
         # TODO: we should remove the xyz/feats maybe? just use observations as input?
         # TODO: switch to using just Obs struct?
         # Shape checking
+        torch.cuda.empty_cache()
+        gc.collect()
+        
         _t0 = timeit.default_timer()
         assert rgb.ndim == 3 or rgb.ndim == 2, f"{rgb.ndim=}: must be 2 or 3"
         if isinstance(rgb, np.ndarray):

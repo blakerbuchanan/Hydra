@@ -255,7 +255,7 @@ def run_eqa(
             
         if voxel_space:
             start = time.time()
-            cam_pose_tsdf[2,3]=0
+            # cam_pose_tsdf[2,3]=0
             obs = Observations(
                 gps=pts_normal[:2],
                 compass=habitat_data.get_heading_angle(),
@@ -294,10 +294,11 @@ def run_eqa(
 
         if step_callback:
             step_callback(pipeline, None)
+    
     if voxel_space:
         start = time.time()   
         voxel_space.update(z=agent_pos[2])
-        frontier_nodes = voxel_space.outside_frontier_points
+        frontier_nodes = voxel_space.clustered_frontiers
         voxel_log_time += time.time()-start
     if vlm_planner:
         vlm_planner.sg_sim.update(frontier_nodes)

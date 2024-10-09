@@ -432,7 +432,63 @@ class Trajectory:
         times_s = dt * np.arange(poses.shape[0]) + start_time_s
         times_ns = (1.0e9 * times_s).astype(np.uint64)
         return cls(times_ns, poses)
+
+
+    @classmethod
+    def from_poses_habitat_yaw(
+        cls,
+        positions,
+        init_quat_wxyz=None,
+        desired_quat_wxyz=None,
+        yaw_diff=None,
+        reinterp_distance=0.2,
+        reinterp_angle=0.2,
+        start_time_s=0.0,
+        dt=0.2,
+    ):
+        """Construct a trajectory from a list of positions and quaternions."""
+
+        # last segment has no orientation change
+        # yaw[-1] = yaw[-2]
+
+        # init_quat_xyzw = np.roll(init_quat_wxyz, -1)
+        # b_R_c = R.from_quat(init_quat_xyzw).as_matrix()
+
+        # Create a list of poses from the above position / yaw data
+        poses = []
+        pose_start = np.zeros(7)
+        pose_start[:3] = np.squeeze(positions[0])
+        pose_start[3:] = np.squeeze(init_quat_wxyz)
+        
+        for i in range(positions.shape[0] - 1):
+            pose_end = np.zeros(7)
+            # Add position
+            pose_end[:3] = np.squeeze(positions[i+1])
+            pose_end[3:] = np.squeeze(desired_quat_wxyz[i])
+
+            poses.append(pose_start)
+
+            dist = np.linalg.norm(pose_start[:3] - pose_end[:3])
+
+            num_intermediate_pos = int(np.ceil(dist / reinterp_distance) - 1)
+            num_intermediate_yaw = int(np.ceil(yaw_diff[i] / reinterp_angle) - 1)
+            num_intermediate = max(num_intermediate_pos, num_intermediate_yaw)
+            for i in range(num_intermediate):
+                # we want slerp ratio to be 0 at start (0)
+                # and 1 at end (num_intermediate)
+                ratio = (i + 1) / (num_intermediate + 1)
+                poses.append(_interp_pose(pose_start, pose_end, ratio))
+
+            poses.append(pose_end)
+
+            pose_start = pose_end.copy()
+
+        poses = np.array(poses)
+        times_s = dt * np.arange(poses.shape[0]) + start_time_s
+        times_ns = (1.0e9 * times_s).astype(np.uint64)
+        return cls(times_ns, poses)
     
+
     def save(self, filename):
         """Save the trajectory to the csv."""
         filepath = pathlib.Path(filename).expanduser().absolute()

@@ -11,7 +11,7 @@
 #
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-import math
+import math, gc
 from collections import deque
 from typing import Optional, Tuple, Union
 
@@ -960,6 +960,9 @@ class SparseVoxelMapNavigationSpace(XYT):
         return clusters_new
 
     def update(self, z=0.):
+        torch.cuda.empty_cache()
+        gc.collect()
+
         rr.log("world/voxel", rr.Clear(recursive=True))
 
         points, _, _, rgb = self.voxel_map.voxel_pcd.get_pointcloud()
@@ -991,7 +994,7 @@ class SparseVoxelMapNavigationSpace(XYT):
         traversible_points = np.array(occupancy_map_to_3d_points(traversible, grid_origin, grid_resolution))
         traversible_points[:,2] = z
 
-        # clustered_frontiers = self.cluster_frontiers()
+        self.clustered_frontiers = self.cluster_frontiers()
 
         rr.log(
             "world/voxel/obstacles",
@@ -1037,8 +1040,8 @@ class SparseVoxelMapNavigationSpace(XYT):
         rr.log(
             "world/voxel/clustered_frontiers",
             rr.Points3D(
-                positions=clustered_frontiers,
-                radii=0.08,
-                colors=[0, 150, 0],
+                positions=self.clustered_frontiers,
+                radii=0.11,
+                colors=[0, 255, 255],
             ),
         )

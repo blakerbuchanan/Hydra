@@ -23,6 +23,7 @@ def main(cfg):
     output_path = Path(cfg.output_path)
     # output_path = hydra.resolve_output_path(cfg.output_path)
 
+    successes, successes_wo_done = 0, 0
     for question_ind in tqdm(range(len(questions_data))):
         # if question_ind==0:
         #     continue
@@ -40,7 +41,8 @@ def main(cfg):
             height=cfg.habitat.img_height,
             agent_z_offset=cfg.habitat.agent_z_offset,
             hfov=cfg.habitat.hfov,
-            z_offset=cfg.habitat.z_offset)
+            z_offset=cfg.habitat.z_offset,
+            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
@@ -79,7 +81,12 @@ def main(cfg):
             tsdf_planner=tsdf_planner,
         )
 
-        vlm_planner = hydra.VLMPLannerEQA(questions_data[question_ind], question_path, pipeline, rr_logger, tsdf_planner.frontier_to_sample_normal)
+        vlm_planner = hydra.VLMPLannerEQA(
+            questions_data[question_ind], 
+            question_path, 
+            pipeline, 
+            rr_logger, 
+            tsdf_planner.frontier_to_sample_normal)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 100
@@ -103,8 +110,9 @@ def main(cfg):
             else:
                 if target_pose is not None:
                     # desired_path = tsdf_planner.sample_frontier()
+                    current_heading = habitat_data.get_heading_angle()
                     desired_path = tsdf_planner.path_to_frontier(target_pose)
-                    poses = habitat_data.get_trajectory_from_path_habitat_frame(desired_path)
+                    poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
                     if poses is not None:
                         click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)
                         hydra.run_eqa(

@@ -101,8 +101,8 @@ def main(habitat_cfg, mapping_cfg_path):
             current_heading = habitat_data.get_heading_angle()
             base_pose = np.append(pts_normal[:2], current_heading)
 
-            idx = np.random.choice(len(space.outside_frontier_points))
-            goal = space.outside_frontier_points[idx]
+            idx = np.random.choice(len(space.clustered_frontiers))
+            goal = space.clustered_frontiers[idx]
             res = plan_to_goal(base_pose, goal, planner, space, verbose=True)
             if not res.success:
                 continue
@@ -126,7 +126,7 @@ def main(habitat_cfg, mapping_cfg_path):
             )
 
 if __name__ == "__main__":
-    habitat_cfg = OmegaConf.load('/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa.yaml')
+    habitat_cfg = OmegaConf.load('/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa_stretch.yaml')
     OmegaConf.resolve(habitat_cfg)
 
     mapping_cfg_path = '/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/voxel_mapping.yaml'

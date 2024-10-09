@@ -36,6 +36,8 @@ import scipy.ndimage as ndimage
 from skimage import measure
 from sklearn.cluster import DBSCAN
 from scipy.ndimage import gaussian_filter, gaussian_filter1d
+import rerun as rr
+
 from .geom import (
     points_in_circle,
     find_normal,
@@ -82,6 +84,7 @@ class TSDFPlanner:
         self._img_width = cfg.img_width
         self._img_height = cfg.img_height
         self._height_offset = cfg.height_offset
+        self._range_height = cfg.range_height
         self._margin_h=int(cfg.margin_h_ratio * cfg.img_height)
         self._margin_w=int(cfg.margin_w_ratio * cfg.img_width)
         self._frontier_min_neighbors = cfg.visual_prompt.frontier_min_neighbors
@@ -617,7 +620,7 @@ class TSDFPlanner:
         )
         self.cur_pos = pts.copy()
         self.cur_point = self.world2vox(pts)
-        island, unoccupied = self.get_island_around_pts(pts, height=self._height_offset)
+        island, unoccupied = self.get_island_around_pts_all_heights(pts, height=self._height_offset)
         unexplored = (np.sum(self._explore_vol_cpu, axis=-1) == 0).astype(int)
         for point in self.init_points:
             unexplored[point[0], point[1]] = 0
@@ -626,6 +629,7 @@ class TSDFPlanner:
 
         explored_reachable = np.argwhere((island) & (explored))
         explored_reachable_img = np.logical_and(island, explored).astype(int)
+
         unoccupied_reachable = np.argwhere((island) & (unoccupied))
         unoccupied_reachable_img = np.logical_and(island, unoccupied).astype(int)
 
@@ -642,17 +646,7 @@ class TSDFPlanner:
             & (unexplored_neighbors >= self._frontier_min_neighbors)
             & (unexplored_neighbors <= self._frontier_max_neighbors)
         )
-        # frontiers_unoccupied = np.argwhere(
-        #     island
-        #     & (unoccupied_neighbors >= self._frontier_min_neighbors)
-        #     & (unoccupied_neighbors <= self._frontier_max_neighbors)
-        # )
         
-        frontiers_unoccupied = np.argwhere(
-            island
-            & np.logical_and(
-                self._tsdf_vol_cpu[:, :, self._height_voxel] < 0.9, self._tsdf_vol_cpu[:, :, self._height_voxel] > 0, self._tsdf_vol_cpu[:, :, 0] < 0
-        ))
         
         # Logging 2D images
         self._rr_logger.log_2d_frontier_data(
@@ -664,36 +658,56 @@ class TSDFPlanner:
         # Convert back to world coordinates
         unoccupied_reachable_normal = unoccupied_reachable * self._voxel_size + self._vol_origin[:2]
         frontiers_unexplored_normal = frontiers_unexplored * self._voxel_size + self._vol_origin[:2]
-        frontiers_unoccupied_normal = frontiers_unoccupied * self._voxel_size + self._vol_origin[:2]
         explored_reachable_normal = explored_reachable * self._voxel_size + self._vol_origin[:2]
         
         unoccupied_reachable_normal = np.concatenate([unoccupied_reachable_normal, np.full((unoccupied_reachable_normal.shape[0],1), pts[2]+self._height_offset)],1)
         frontiers_unexplored_normal = np.concatenate([frontiers_unexplored_normal, np.full((frontiers_unexplored_normal.shape[0],1), pts[2]+self._height_offset)],1)
-        frontiers_unoccupied_normal = np.concatenate([frontiers_unoccupied_normal, np.full((frontiers_unoccupied_normal.shape[0],1), pts[2]+self._height_offset)],1)
         explored_reachable_normal = np.concatenate([explored_reachable_normal, np.full((explored_reachable_normal.shape[0],1), pts[2]+self._height_offset)],1)
 
-        self._rr_logger.log_3d_frontier_data(unoccupied_reachable_normal, frontiers_unexplored_normal, explored_reachable_normal)
-        
-        
-        self.frontiers_unoccupied = frontiers_unoccupied
-        self.frontiers_unexplored = frontiers_unexplored
-        self.frontiers_unoccupied_normal = frontiers_unoccupied_normal
-        self.frontiers_unexplored_normal = frontiers_unexplored_normal
-        self.unoccupied_reachable_img = unoccupied_reachable_img
-        self.explored_reachable_img = explored_reachable_img
+        # self._rr_logger.log_3d_frontier_data(unoccupied_reachable_normal, frontiers_unexplored_normal, explored_reachable_normal)
+
+        clustered_frontiers = self.cluster_frontiers(frontiers_unexplored)
 
         dist_all = np.sqrt(
-            (self.frontiers_unexplored[:, 0] - self.cur_point[0]) ** 2
-            + (self.frontiers_unexplored[:, 1] - self.cur_point[1]) ** 2
+            (clustered_frontiers[:, 0] - self.cur_point[0]) ** 2
+            + (clustered_frontiers[:, 1] - self.cur_point[1]) ** 2
         )
-        self.frontiers_to_sample = self.frontiers_unexplored[
+        frontiers_within_limit = clustered_frontiers[
             (dist_all > self._point_min_dist / self._voxel_size)
             & (dist_all < self._point_max_dist / self._voxel_size)
         ]
 
-        self.frontier_to_sample_normal = self.frontiers_unexplored * self._voxel_size + self._vol_origin[:2]
-        self.frontier_to_sample_normal = np.concatenate([self.frontier_to_sample_normal, np.full((self.frontier_to_sample_normal.shape[0],1), pts[2])],1)
+        self.frontiers_to_sample = frontiers_within_limit
 
+        self.explored_reachable_img = explored_reachable_img # For planning
+
+        # For sampling goal
+        self.frontier_to_sample_normal = self.frontiers_to_sample * self._voxel_size + self._vol_origin[:2] 
+        self.frontier_to_sample_normal = np.concatenate([self.frontier_to_sample_normal, np.full((self.frontier_to_sample_normal.shape[0],1), pts[2]+self._height_offset)],1)
+        
+        rr.log(f"world/tsdf_unoccupied", rr.Points3D(unoccupied_reachable_normal, colors=[255, 0, 0], radii=0.06))
+        rr.log(f"world/tsdf_explored", rr.Points3D(explored_reachable_normal, colors=[200, 180, 150], radii=0.08))
+        rr.log(f"world/tsdf_frontiers", rr.Points3D(frontiers_unexplored_normal, colors=[255, 255, 255], radii=0.08))
+        rr.log(f"world/tsdf_frontiers_clustered", rr.Points3D(self.frontier_to_sample_normal, colors=[0, 0, 0], radii=0.11))
+    
+    def cluster_frontiers(self, frontiers):
+        # cluster, or return none
+        if len(frontiers) < self._cfg.visual_prompt.min_points_for_clustering:
+            return frontiers
+        else:
+            clusters = fps(frontiers, self._cfg.visual_prompt.num_clusters)
+            # merge clusters if too close to each other
+            clusters_new = np.empty((0, 2))
+            for cluster in clusters:
+                if len(clusters_new) == 0:
+                    clusters_new = np.vstack((clusters_new, cluster))
+                else:
+                    clusters_array = np.array(clusters_new)
+                    dist = np.sqrt(np.sum((clusters_array - cluster) ** 2, axis=1))
+                    if np.min(dist) > self._cfg.visual_prompt.cluster_threshold / self._voxel_size:
+                        clusters_new = np.vstack((clusters_new, cluster))
+        return clusters_new
+    
     def sample_frontier(self):
         
         sample_idx = np.random.choice(self.frontiers_to_sample.shape[0], size=1, replace=False)[0]
@@ -724,11 +738,11 @@ class TSDFPlanner:
 
         path_normal = np.array(path) * self._voxel_size + self._vol_origin[:2]
         # Apply Gaussian smoothing (sigma controls smoothness)
-        smoothed_trajectory_x = gaussian_filter1d(path_normal[:, 0], sigma=1)
-        smoothed_trajectory_y = gaussian_filter1d(path_normal[:, 1], sigma=1)
-        path_normal = np.vstack((smoothed_trajectory_x, smoothed_trajectory_y)).T
+        # smoothed_trajectory_x = gaussian_filter1d(path_normal[:, 0], sigma=1)
+        # smoothed_trajectory_y = gaussian_filter1d(path_normal[:, 1], sigma=1)
+        # path_normal = np.vstack((smoothed_trajectory_x, smoothed_trajectory_y)).T
 
-        path_normal = np.concatenate([path_normal, np.full((path_normal.shape[0],1), self.cur_pos[2]+self._height_offset)],1)[::5]
+        path_normal = np.concatenate([path_normal, np.full((path_normal.shape[0],1), self.cur_pos[2]+self._height_offset)],1)
 
         self._rr_logger.log_traj_data(path_normal)
         self._rr_logger.log_target_poses(frontier_normal)
@@ -1050,6 +1064,45 @@ class TSDFPlanner:
         height_voxel = int(height / self._voxel_size) + self.min_height_voxel
         unoccupied = np.logical_and(
             self._tsdf_vol_cpu[:, :, height_voxel] > 0, self._tsdf_vol_cpu[:, :, 0] < 0
+        )  # check there is ground below
+
+        # Set initial pose to be free
+        for point in self.init_points:
+            unoccupied[point[0], point[1]] = 1
+
+        # filter small islands smaller than size 2x2 and fill in gap of size 2
+        fill_size = int(fill_dim / self._voxel_size)
+        structuring_element_close = np.ones((fill_size, fill_size)).astype(bool)
+        unoccupied = close_operation(unoccupied, structuring_element_close)
+
+        # Find the connected component closest to the current location is, if the current location is not free
+        # this is a heuristic to determine reachable space, although not perfect
+        islands = measure.label(unoccupied, connectivity=1)
+        if unoccupied[cur_point[0], cur_point[1]] == 1:
+            islands_ind = islands[cur_point[0], cur_point[1]]  # use current one
+        else:
+            # find the closest one - tbh, this should not happen, but it happens when the robot cannot see the space immediately in front of it because of camera height and fov
+            y, x = np.ogrid[: unoccupied.shape[0], : unoccupied.shape[1]]
+            dist_all = np.sqrt((x - cur_point[1]) ** 2 + (y - cur_point[0]) ** 2)
+            dist_all[islands == islands[cur_point[0], cur_point[1]]] = np.inf
+            island_coords = np.unravel_index(np.argmin(dist_all), dist_all.shape)
+            islands_ind = islands[island_coords[0], island_coords[1]]
+        island = islands == islands_ind
+        return island, unoccupied
+
+    def get_island_around_pts_all_heights(self, pts, fill_dim=0.6, height=0.4):
+        """Find the empty space around the point (x,y,z) in the world frame"""
+        # Convert to voxel coordinates
+        cur_point = self.world2vox(pts)
+
+        # Check if the height voxel is occupied
+        height_voxel = int(height / self._voxel_size) + self.min_height_voxel
+        
+        min_height_voxel = max(int((height+self._range_height[0]) / self._voxel_size) + self.min_height_voxel, 3)
+        max_height_voxel = int((height+self._range_height[1])/self._voxel_size) + self.min_height_voxel
+
+        unoccupied = np.logical_and(
+            np.min(self._tsdf_vol_cpu[:,:,min_height_voxel:max_height_voxel], axis=2) > 0, self._tsdf_vol_cpu[:, :, 0] < 0
         )  # check there is ground below
 
         # Set initial pose to be free
