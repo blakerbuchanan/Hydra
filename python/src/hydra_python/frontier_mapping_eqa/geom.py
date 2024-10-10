@@ -86,7 +86,10 @@ def fps(points, n_samples):
 
         # We want to pick the one that has the largest nearest neighbour
         # distance to the sampled points
-        selected = np.argmax(dists[points_left])
+        try:
+            selected = np.argmax(dists[points_left])
+        except:
+            import ipdb; ipdb.set_trace()
         sample_inds[i] = points_left[selected]
 
         # Update points_left

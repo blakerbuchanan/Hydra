@@ -695,7 +695,7 @@ class TSDFPlanner:
         if len(frontiers) < self._cfg.visual_prompt.min_points_for_clustering:
             return frontiers
         else:
-            clusters = fps(frontiers, self._cfg.visual_prompt.num_clusters)
+            clusters = fps(frontiers, min(self._cfg.visual_prompt.num_clusters, len(frontiers)-1))
             # merge clusters if too close to each other
             clusters_new = np.empty((0, 2))
             for cluster in clusters:
@@ -719,15 +719,15 @@ class TSDFPlanner:
 
         path_normal = np.array(path) * self._voxel_size + self._vol_origin[:2]
         # Apply Gaussian smoothing (sigma controls smoothness)
-        smoothed_trajectory_x = gaussian_filter1d(path_normal[:, 0], sigma=1)
-        smoothed_trajectory_y = gaussian_filter1d(path_normal[:, 1], sigma=1)
-        path_normal = np.vstack((smoothed_trajectory_x, smoothed_trajectory_y)).T
+        # smoothed_trajectory_x = gaussian_filter1d(path_normal[:, 0], sigma=1)
+        # smoothed_trajectory_y = gaussian_filter1d(path_normal[:, 1], sigma=1)
+        # path_normal = np.vstack((smoothed_trajectory_x, smoothed_trajectory_y)).T
 
-        path_normal = np.concatenate([path_normal, np.full((path_normal.shape[0],1), self.cur_pos[2]+self._height_offset)],1)[::5]
+        path_normal = np.concatenate([path_normal, np.full((path_normal.shape[0],1), self.cur_pos[2]+self._height_offset)],1)
 
-        self._rr_logger.log_traj_data(path_normal)
-        self._rr_logger.log_target_poses(frontier_normal)
-        return path_normal 
+        # self._rr_logger.log_traj_data(path_normal)
+        # self._rr_logger.log_target_poses(frontier_normal)
+        return path_normal, frontier_normal
 
     def path_to_frontier(self, frontier_normal):
         frontier_sample = self.world2vox(frontier_normal)
@@ -744,9 +744,9 @@ class TSDFPlanner:
 
         path_normal = np.concatenate([path_normal, np.full((path_normal.shape[0],1), self.cur_pos[2]+self._height_offset)],1)
 
-        self._rr_logger.log_traj_data(path_normal)
-        self._rr_logger.log_target_poses(frontier_normal)
-        return path_normal 
+        # self._rr_logger.log_traj_data(path_normal)
+        # self._rr_logger.log_target_poses(frontier_normal)
+        return path_normal
     
     def find_next_pose(
         self,

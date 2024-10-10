@@ -16,7 +16,7 @@ client = OpenAI()
 from pydantic import BaseModel
 
 
-def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options):
+def create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
     class Done_action(str, Enum):
         Done = "done_with_task"
     
@@ -32,6 +32,10 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action,
         explanation_frontier: str
         action: Goto_frontier_node_action
 
+    class Goto_object_node_step(BaseModel):
+        explanation_obj: str
+        action: Goto_object_node_action
+
     class Done_step(BaseModel):
         explanation_done: str
         action: Done_action
@@ -46,7 +50,8 @@ def create_planner_response(Goto_visited_node_action, Goto_frontier_node_action,
 
     class PlannerResponse(BaseModel):
         # steps: List[Union[Goto_visited_node_step, Goto_frontier_node_step, Done_step]]
-        steps: List[Goto_frontier_node_step]
+        steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
+        # steps: List[Goto_frontier_node_step]
         answer: Answer
         confidence: Confidence
         # final_full_plan: str
@@ -90,9 +95,10 @@ class VLMPLannerEQA:
     
     def get_actions(self):
         Goto_visited_node_action = Enum('Goto_visited_node_action', {ac: ac for ac in self.sg_sim.visited_node_ids}, type=str)
+        Goto_object_node_action = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
         Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
-        return Goto_visited_node_action, Goto_frontier_node_action, Answer_options
+        return Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options
     
     # @property
     # def agent_role_prompt(self):
@@ -114,14 +120,15 @@ class VLMPLannerEQA:
     
     @property
     def agent_role_prompt(self):
-        prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment. You need to keep exploring until you can confidently answer the question.\
+        prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment.\
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
             Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
+            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
             You are required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
-            To explore unseen parts of the environment choose a frontier node to goto using Goto_frontier_node_step.  \n \
-            Doing this will Navigate to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented."
+            To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. \n \
+            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
+            Goto_object_node_step: Navigates to a certain object. This can help facilitate answering the question related to an object in the question."
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -144,7 +151,7 @@ class VLMPLannerEQA:
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
-        Goto_visited_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
+        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
 
         succ=False
         while not succ:
@@ -154,7 +161,7 @@ class VLMPLannerEQA:
                     model="gpt-4o-mini",
                     # model="gpt-4o-2024-08-06",
                     messages=messages,
-                    response_format=create_planner_response(Goto_visited_node_action, Goto_frontier_node_action, Answer_options),
+                    response_format=create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options),
                 )
                 print(f"Time taken for planning next step: {time.time()-start}s")
                 plan = completion.choices[0].message

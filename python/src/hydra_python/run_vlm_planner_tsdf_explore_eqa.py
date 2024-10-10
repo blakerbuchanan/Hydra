@@ -25,8 +25,8 @@ def main(cfg):
 
     successes, successes_wo_done = 0, 0
     for question_ind in tqdm(range(len(questions_data))):
-        # if question_ind==0:
-        #     continue
+        if question_ind in [0,1]:
+            continue
         question_data = questions_data[question_ind]
         print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
 
@@ -112,6 +112,24 @@ def main(cfg):
                     # desired_path = tsdf_planner.sample_frontier()
                     current_heading = habitat_data.get_heading_angle()
                     desired_path = tsdf_planner.path_to_frontier(target_pose)
+
+                    agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
+                    current_pos = agent.get_state().position
+                    frontier_habitat = pos_normal_to_habitat(target_pose)
+                    frontier_habitat[1] = current_pos[1]
+                    path = habitat_sim.nav.ShortestPath()
+                    path.requested_start = current_pos
+                    path.requested_end = frontier_habitat
+                    # Compute the shortest path
+                    found_path = habitat_data.pathfinder.find_path(path)
+                    if found_path:
+                        desired_path = pos_habitat_to_normal(np.array(path.points))
+                        rr_logger.log_traj_data(desired_path)
+                        rr_logger.log_target_poses(target_pose)
+                    else:
+                        click.secho(f"Cannot find navigable path: {cnt_step}",fg="red",)
+                        continue
+
                     poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
                     if poses is not None:
                         click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)

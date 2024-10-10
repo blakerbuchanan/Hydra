@@ -73,7 +73,8 @@ def _build_navgraph(sim, pathfinder, settings, threshold):
         G.add_edge(v3, v1, weight=w3)
 
     largest_cc = max(nx.connected_components(G), key=len)
-    return G.subgraph(largest_cc)
+    # return G.subgraph(largest_cc)
+    return G
 
 
 def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, camera_height=0.0):

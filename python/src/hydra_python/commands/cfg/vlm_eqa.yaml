@@ -1,6 +1,7 @@
 # General
 seed: 42
-exp_name: explore_eqa_random
+# exp_name: explore_eqa_random
+exp_name: explore_eqa_planner
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 
 data:
@@ -22,8 +23,8 @@ habitat:
   scene_type: 'hm3d'
   img_width: 640
   img_height: 480
-  camera_height: 1.5
-  camera_tilt_deg: -30
+  camera_height: 0.8
+  camera_tilt_deg: -15
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
@@ -50,7 +51,7 @@ frontier_mapping:
     num_prompt_points: 3
     num_max_unoccupied: 300
     min_points_for_clustering: 3
-    point_min_dist: 2
+    point_min_dist: 1
     point_max_dist: 10
     cam_offset: 0.6
     min_num_prompt_points: 2

@@ -73,6 +73,7 @@ class RRLogger:
             'visited-to-frontier': [255,255,255],
             'visited-to-visited': [0,0,0],
             'visited-to-agent': [255,255,0],
+            'frontier-to-object': [255,255,0],
         }
         self.reset()
 

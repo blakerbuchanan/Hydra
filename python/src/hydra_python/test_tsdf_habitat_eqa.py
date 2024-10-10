@@ -24,8 +24,8 @@ def main(cfg):
     # output_path = hydra.resolve_output_path(cfg.output_path)
 
     for question_ind in tqdm(range(len(questions_data))):
-        # if question_ind==0:
-        #     continue
+        if question_ind==0:
+            continue
         question_data = questions_data[question_ind]
         print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
 
@@ -51,6 +51,8 @@ def main(cfg):
         answer = question_data["answer"]
         init_pts = init_pose_data[scene_floor]["init_pts"]
         init_angle = init_pose_data[scene_floor]["init_angle"]
+        # init_pts[0] = -0.154
+        # init_pts[2] = 0.69
 
         # Setup TSDF planner
         pts_normal = pos_habitat_to_normal(init_pts)
@@ -80,11 +82,44 @@ def main(cfg):
             tsdf_planner=tsdf_planner,
         )
 
-        num_steps = 30
+        # LOG NAVMESH
+        graph_nodes = np.array([habitat_data.G.nodes[n]["pos"] for n in habitat_data.G]).squeeze()
+        positions_navmesh = np.array([pos_habitat_to_normal(p) for p in graph_nodes])
+        rr_logger.log_navmesh_data(positions_navmesh)
+
+        vlm_planner = hydra.VLMPLannerEQA(
+            questions_data[question_ind], 
+            question_path, 
+            pipeline, 
+            rr_logger, 
+            tsdf_planner.frontier_to_sample_normal)
+        click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
+
+        num_steps = 200
         for i in range(num_steps):
             current_heading = habitat_data.get_heading_angle()
-            desired_path = tsdf_planner.sample_frontier()
+            desired_path, frontier_normal = tsdf_planner.sample_frontier()
+            
+            # # Create a path object
+            agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
+            current_pos = agent.get_state().position
+            frontier_habitat = pos_normal_to_habitat(frontier_normal)
+            frontier_habitat[1] = current_pos[1]
+            path = habitat_sim.nav.ShortestPath()
+            path.requested_start = current_pos
+            path.requested_end = frontier_habitat
+            # Compute the shortest path
+            found_path = habitat_data.pathfinder.find_path(path)
+            if found_path:
+                desired_path = pos_habitat_to_normal(np.array(path.points))
+                rr_logger.log_traj_data(desired_path)
+                rr_logger.log_target_poses(frontier_normal)
+            else:
+                click.secho(f"Cannot find navigable path: {i}",fg="red",)
+                continue
+
             poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+            click.secho(f"Executing trajectory: {i}",fg="yellow",)
             hydra.run_eqa(
                 pipeline,
                 habitat_data,
@@ -92,6 +127,7 @@ def main(cfg):
                 output_path=question_path,
                 rr_logger=rr_logger,
                 tsdf_planner=tsdf_planner,
+                vlm_planner=vlm_planner,
             )
         pipeline.save()
 
