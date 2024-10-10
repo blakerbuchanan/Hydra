@@ -59,11 +59,12 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
     return PlannerResponse
 
 class VLMPLannerEQA:
-    def __init__(self, question_data, output_path, pipeline, rr_logger, frontier_nodes=None):
+    def __init__(self, question_data, output_path, pipeline, rr_logger, frontier_nodes=None, vlm_type='gpt'):
         
         self._question = self._get_instruction(question_data)
         self._answer = question_data["answer"]
         self._output_path = output_path
+        self._vlm_type = vlm_type
 
         self._example_plan = '' #TODO(saumya)
         self._done = False
@@ -128,7 +129,7 @@ class VLMPLannerEQA:
             You are required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
             To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
-            Goto_object_node_step: Navigates to a certain object. This can help facilitate answering the question related to an object in the question."
+            Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -138,12 +139,7 @@ class VLMPLannerEQA:
             SCENE GRAPH: {scene_graph}. \n "
         return prompt
 
-    def get_next_action(self):
-        # self.sg_sim.update()
-        
-        agent_state = self.sg_sim.get_current_semantic_state_str()
-
-        current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
+    def get_gpt_output(self, current_state_prompt):
 
         messages=[
             {"role": "system", "content": f"AGENT ROLE: {self.agent_role_prompt}"},
@@ -173,24 +169,44 @@ class VLMPLannerEQA:
     
         plan = completion.choices[0].message
         step = plan.parsed.steps[0]
-        print(f'At t={self._t}: \n {step}')
+        return step, plan.parsed.confidence, plan.parsed.answer
+        
+    def get_gemini_output(self, current_state_prompt):
+        # TODO(blake):
+        return None, None, None
+    
+    
+    def get_next_action(self):
+        # self.sg_sim.update()
+        
+        agent_state = self.sg_sim.get_current_semantic_state_str()
 
+        current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
+
+        if self._vlm_type == 'gpt':
+            step, confidence, answer = self.get_gpt_output(current_state_prompt)
+
+        if self._vlm_type == 'gemini':
+            step, confidence, answer = self.get_gemini_output(current_state_prompt)
+
+
+        print(f'At t={self._t}: \n {step}')
         if 'done_with_task' in step.action.value:
             self._done = True
             target_pose = None
         else:
-            target_pose = self.sg_sim.get_position_from_id(step.action.value)
+            target_pose = self.sg_sim.get_position_from_id(step.action.name)
 
         # Saving outputs to file
         self._outputs_to_save.append(f'At t={self._t}: \n \
                                         Agent state: {agent_state} \n \
                                         LLM output: {step}. \n \
-                                        Confidence: {plan.parsed.confidence} \n \
-                                        Answer: {plan.parsed.answer} \n \n')
+                                        Confidence: {confidence} \n \
+                                        Answer: {answer} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
 
         self._t += 1
-        return target_pose, self.done, plan.parsed.confidence.answer.value, plan.parsed.answer.answer.name
+        return target_pose, self.done, confidence.answer.value, answer.answer.name
         

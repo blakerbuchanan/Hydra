@@ -86,7 +86,8 @@ def main(cfg):
             question_path, 
             pipeline, 
             rr_logger, 
-            tsdf_planner.frontier_to_sample_normal)
+            tsdf_planner.frontier_to_sample_normal,
+            vlm_type=cfg.vlm)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 100
