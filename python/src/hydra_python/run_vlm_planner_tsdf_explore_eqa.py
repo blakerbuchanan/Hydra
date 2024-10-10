@@ -79,15 +79,16 @@ def main(cfg):
             output_path=question_path,
             rr_logger=rr_logger,
             tsdf_planner=tsdf_planner,
+            save_image=cfg.vlm.use_image,
         )
 
         vlm_planner = hydra.VLMPLannerEQA(
+            cfg.vlm,
             questions_data[question_ind], 
             question_path, 
             pipeline, 
             rr_logger, 
-            tsdf_planner.frontier_to_sample_normal,
-            vlm_type=cfg.vlm)
+            tsdf_planner.frontier_to_sample_normal,)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 100
@@ -142,6 +143,7 @@ def main(cfg):
                             rr_logger=rr_logger,
                             tsdf_planner=tsdf_planner,
                             vlm_planner=vlm_planner,
+                            save_image=cfg.vlm.use_image,
                         )
 
         pipeline.save()

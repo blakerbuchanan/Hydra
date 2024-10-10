@@ -4,6 +4,7 @@ from typing import Union
 from typing import List, Tuple
 import time
 import hydra_python as hydra
+import base64
 
 from openai import OpenAI
 
@@ -15,14 +16,17 @@ client = OpenAI()
 
 from pydantic import BaseModel
 
+def encode_image(image_path):
+  with open(image_path, "rb") as image_file:
+    return base64.b64encode(image_file.read()).decode('utf-8')
 
 def create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
     class Done_action(str, Enum):
         Done = "done_with_task"
     
     class Confidence_check(str, Enum):
-        Confident_in_answering_question = "yes"
-        Not_confident_in_answering_question = "no"
+        Confident_in_correctly_answering_question = "yes"
+        Not_confident_in_correctly_answering_question = "no"
 
     class Goto_visited_node_step(BaseModel):
         explanation_visited: str
@@ -49,22 +53,21 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         answer: Confidence_check
 
     class PlannerResponse(BaseModel):
-        # steps: List[Union[Goto_visited_node_step, Goto_frontier_node_step, Done_step]]
         steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
-        # steps: List[Goto_frontier_node_step]
         answer: Answer
         confidence: Confidence
-        # final_full_plan: str
+        image_description: str
     
     return PlannerResponse
 
 class VLMPLannerEQA:
-    def __init__(self, question_data, output_path, pipeline, rr_logger, frontier_nodes=None, vlm_type='gpt'):
+    def __init__(self, cfg, question_data, output_path, pipeline, rr_logger, frontier_nodes=None):
         
         self._question = self._get_instruction(question_data)
         self._answer = question_data["answer"]
         self._output_path = output_path
-        self._vlm_type = vlm_type
+        self._vlm_type = cfg.name
+        self._use_image = cfg.use_image
 
         self._example_plan = '' #TODO(saumya)
         self._done = False
@@ -126,7 +129,8 @@ class VLMPLannerEQA:
             Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
             Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
-            You are required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
+            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with high Confidence.\
+            You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
             To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
             Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
@@ -140,13 +144,31 @@ class VLMPLannerEQA:
         return prompt
 
     def get_gpt_output(self, current_state_prompt):
-
+        
         messages=[
             {"role": "system", "content": f"AGENT ROLE: {self.agent_role_prompt}"},
             {"role": "system", "content": f"QUESTION: {self._question}"},
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
+
+        if self._use_image:
+            base64_image = encode_image(self._output_path / "current_img.png")
+            messages.append(
+                { 
+                    "role": "user",
+                    "content": [
+                        {
+                        "type": "text",
+                        "text": "CURRENT IMAGE: This image represents the current view of the agent. Use this as additional information to answer the question."
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                        }
+                    ]
+                })
+
         Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
 
         succ=False
@@ -169,13 +191,19 @@ class VLMPLannerEQA:
     
         plan = completion.choices[0].message
         step = plan.parsed.steps[0]
-        return step, plan.parsed.confidence, plan.parsed.answer
+
+        if self._use_image:
+            img_desc = plan.parsed.image_description
+        else:
+            img_desc = ' '
+        
+        return step, plan.parsed.confidence, plan.parsed.answer, img_desc
         
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
         return None, None, None
     
-    
+
     def get_next_action(self):
         # self.sg_sim.update()
         
@@ -184,13 +212,13 @@ class VLMPLannerEQA:
         current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
 
         if self._vlm_type == 'gpt':
-            step, confidence, answer = self.get_gpt_output(current_state_prompt)
+            step, confidence, answer, img_desc = self.get_gpt_output(current_state_prompt)
 
         if self._vlm_type == 'gemini':
-            step, confidence, answer = self.get_gemini_output(current_state_prompt)
+            step, confidence, answer, img_desc = self.get_gemini_output(current_state_prompt)
 
 
-        print(f'At t={self._t}: \n {step}')
+        print(f'At t={self._t}: \n {step} \n Confidence: {confidence} \n Answer: {answer} \n')
         if 'done_with_task' in step.action.value:
             self._done = True
             target_pose = None
@@ -202,7 +230,8 @@ class VLMPLannerEQA:
                                         Agent state: {agent_state} \n \
                                         LLM output: {step}. \n \
                                         Confidence: {confidence} \n \
-                                        Answer: {answer} \n \n')
+                                        Answer: {answer} \n \
+                                        Image desc: {img_desc} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
