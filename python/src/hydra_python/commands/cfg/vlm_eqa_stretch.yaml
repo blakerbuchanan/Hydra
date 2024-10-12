@@ -2,7 +2,10 @@
 seed: 42
 exp_name: vlm_sg_stretch_tsdf_random
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
-vlm: 'gpt' # 'gemini'
+
+vlm:
+  name: 'gpt' # 'gemini'
+  use_image: True
 
 data:
   question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'

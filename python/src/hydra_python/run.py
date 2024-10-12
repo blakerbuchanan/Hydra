@@ -7,6 +7,7 @@ import rerun.blueprint as rrb
 from hydra_python.frontier_mapping_eqa.utils import get_cam_pose_tsdf, pos_habitat_to_normal
 from voxel_mapping import Observations
 import threading, time
+from PIL import Image
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -223,6 +224,7 @@ def run_eqa(
     vlm_planner=None,
     tsdf_planner=None,
     voxel_space=None,
+    save_image=False
 ):
 
     agent_positions, agent_quats_wxyz = [], []
@@ -304,3 +306,7 @@ def run_eqa(
     if vlm_planner:
         vlm_planner.sg_sim.update(frontier_nodes)
     print(f"{step_time=} {frontier_update_time=} {voxel_log_time=} {sg_update_time=} {mesh_log_time=}")
+
+    if save_image:
+        curr_img = Image.fromarray(habitat_data.rgb)
+        curr_img.save(output_path / "current_img.png")

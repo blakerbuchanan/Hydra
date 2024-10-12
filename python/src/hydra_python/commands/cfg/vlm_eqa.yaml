@@ -1,9 +1,12 @@
 # General
 seed: 42
 # exp_name: explore_eqa_random
-exp_name: explore_eqa_planner
+exp_name: explore_eqa_planner_imgs
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
-vlm: 'gpt' # 'gemini'
+
+vlm:
+  name: 'gpt' # 'gemini'
+  use_image: True
 
 data:
   question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'
