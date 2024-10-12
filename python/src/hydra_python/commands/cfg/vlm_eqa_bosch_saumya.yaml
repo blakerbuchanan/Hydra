@@ -1,0 +1,60 @@
+# General
+seed: 42
+exp_name: vlm_sg_eqa_exp
+output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
+vlm: 'gemini' # 'gemini' or 'gpt'
+
+data:
+  question_data_path: '/home/saumyas/semnav_workspace/data/explore-eqa_semnav/questions.csv'
+  init_pose_data_path: '/home/saumyas/semnav_workspace/data/explore-eqa_semnav/scene_init_poses.csv'
+  semantic_annot_data_path: '/home/saumyas/semnav_workspace/data/hm3d-train-semantic-annots-v0.2'
+  scene_data_path: '/home/saumyas/semnav_workspace/data/hm3d/train'
+
+logging:
+  output_parent_dir: results
+  save_obs: true
+  save_freq: 10
+
+planner:
+  max_step_room_size_ratio: 3
+  break_at_done: False
+
+habitat:
+  scene_type: 'hm3d'
+  img_width: 640
+  img_height: 480
+  camera_height: 0.8
+  camera_tilt_deg: -15
+  agent_z_offset: 0.
+  hfov: 120
+  z_offset: 0
+
+
+hydra:
+  glog_level: 0
+  verbosity: 0
+  label_space: 'hm3d'
+  config_verbosity: 0
+
+frontier_mapping:
+  tsdf_grid_size: 0.1
+  init_clearance: 0.5
+  img_width: ${habitat.img_width}
+  img_height: ${habitat.img_height}
+  margin_w_ratio: 0.25
+  margin_h_ratio: 0.6
+  height_offset: 0.4
+  range_height: [-0.2, 0.2]
+  visual_prompt:
+    cluster_threshold: 1.0
+    num_clusters: 10
+    num_prompt_points: 3
+    num_max_unoccupied: 300
+    min_points_for_clustering: 3
+    point_min_dist: 1
+    point_max_dist: 10
+    cam_offset: 0.6
+    min_num_prompt_points: 2
+    circle_radius: 18
+    frontier_min_neighbors: 3
+    frontier_max_neighbors: 4

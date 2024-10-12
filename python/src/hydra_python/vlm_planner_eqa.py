@@ -1,17 +1,24 @@
 import json
 from enum import Enum
-from typing import Union
-from typing import List, Tuple
+from typing import List, Tuple, Literal, Any, Union, Optional
 import time
 import hydra_python as hydra
+from typing_extensions import TypedDict
 
 from openai import OpenAI
+import google.generativeai as genai
+import os
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
 #     project='proj_rZU06lthKefMBx9rE3YGD2Um',
 # )
 client = OpenAI()
+
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
+# Choose a Gemini model.
+gemini_model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
 
 from pydantic import BaseModel
 
@@ -57,6 +64,61 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         # final_full_plan: str
     
     return PlannerResponse
+    
+def create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
+
+    class Done_action(str, Enum):
+        Done = "done_with_task"
+
+    # Combine all action types into a single list
+    all_actions = list(Goto_object_node_action) + list(Goto_frontier_node_action) + list(Done_action)
+
+    return {
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["object_node", "frontier_node", "done_step"]
+                        },
+                        "explanation_obj": {"type": "string"},
+                        "explanation_frontier": {"type": "string"},
+                        "explanation_done": {"type": "string"},
+                        "action": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "enum": all_actions},
+                                "value": {"type": "string"}
+                            },
+                            "required": ["name", "value"]
+                        }
+                    },
+                    "required": ["type", "action"]
+                }
+            },
+            "answer": {
+                "type": "object",
+                "properties": {
+                    "explanation_ans": {"type": "string"},
+                    "answer": {"type": "string", "enum": list(Answer_options)}
+                },
+                "required": ["explanation_ans", "answer"]
+            },
+            "confidence": {
+                "type": "object",
+                "properties": {
+                    "explanation_conf": {"type": "string"},
+                    "answer": {"type": "string", "enum": ["yes", "no"]}
+                },
+                "required": ["explanation_conf", "answer"]
+            }
+        },
+        "required": ["steps", "answer", "confidence"]
+    }
 
 class VLMPLannerEQA:
     def __init__(self, question_data, output_path, pipeline, rr_logger, frontier_nodes=None, vlm_type='gpt'):
@@ -127,6 +189,7 @@ class VLMPLannerEQA:
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
             Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
             You are required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
+            You are also required to report an answer to the question, even if Confidence is low. This answer should include the letter associated with the choices available.\
             To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
             Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
@@ -166,16 +229,49 @@ class VLMPLannerEQA:
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
                 time.sleep(1)
-    
+
         plan = completion.choices[0].message
         step = plan.parsed.steps[0]
         return step, plan.parsed.confidence, plan.parsed.answer
         
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
-        return None, None, None
+        messages=[
+            {"role": "model", "parts": [{"text": f"AGENT ROLE: {self.agent_role_prompt}"}]},
+            {"role": "model", "parts": [{"text": f"QUESTION: {self._question}"}]},
+            {"role": "user", "parts": [{"text": f"CURRENT STATE: {current_state_prompt}."}]},
+            # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
+        ]
+
+        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
+
+        succ=False
+        while not succ:
+            try:
+                start = time.time()
+
+                response = gemini_model.generate_content(messages,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json", response_schema=create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
+                )
+
+                print(f"Time taken for planning next step: {time.time()-start}s")
+                if (True): # If the model refuses to respond, you will get a refusal message
+                    succ=True
+            except Exception as e:
+                print(f"An error occurred: {e}. Sleeping for 45s")
+                time.sleep(45)
+        
+        json_response = response.text
+        response_dict = json.loads(json_response)
+
+        step = response_dict["steps"][0]
+        confidence = response_dict["confidence"]
+        answer = response_dict["answer"]["answer"]
+
+        return step, confidence, answer
     
-    
+
     def get_next_action(self):
         # self.sg_sim.update()
         
@@ -191,11 +287,18 @@ class VLMPLannerEQA:
 
 
         print(f'At t={self._t}: \n {step}')
-        if 'done_with_task' in step.action.value:
-            self._done = True
-            target_pose = None
-        else:
-            target_pose = self.sg_sim.get_position_from_id(step.action.name)
+        if self._vlm_type == 'gemini':
+            if 'done_with_task' in step["action"]["name"]:
+                self._done = True
+                target_pose = None
+            else:
+                target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
+        if self._vlm_type == 'gpt':
+            if 'done_with_task' in step.action.value:
+                self._done = True
+                target_pose = None
+            else:
+                target_pose = self.sg_sim.get_position_from_id(step.action.name)
 
         # Saving outputs to file
         self._outputs_to_save.append(f'At t={self._t}: \n \
@@ -208,5 +311,8 @@ class VLMPLannerEQA:
             text_file.write(self.full_plan)
 
         self._t += 1
-        return target_pose, self.done, confidence.answer.value, answer.answer.name
+        if self._vlm_type == 'gpt':
+            return target_pose, self.done, confidence.answer.value, answer.answer.name
+        if self._vlm_type == 'gemini':
+            return target_pose, self.done, confidence["answer"], answer
         
