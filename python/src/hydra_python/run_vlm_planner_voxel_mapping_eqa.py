@@ -113,14 +113,14 @@ def main(habitat_cfg, mapping_cfg_path):
                     successes += 1
                     click.secho(f"Success at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 else:
-                    click.secho(f"Failire at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 break
             elif 'yes' in confidence:
                 if answer == answer_output:
                     successes_wo_done += 1
                     click.secho(f"Success without done at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 else:
-                    click.secho(f"Failire without done at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Failure without done at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 break
             else:
                 if target_pose is not None:

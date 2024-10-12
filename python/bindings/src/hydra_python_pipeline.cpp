@@ -73,8 +73,9 @@ config::VirtualConfig<Sensor> PythonCamera::sensor() const {
 HydraPythonPipeline::HydraPythonPipeline(const PipelineConfig& config,
                                          int robot_id,
                                          int config_verbosity,
+                                         bool freeze_global_info,
                                          bool step_mode_only)
-    : HydraPipeline(config, robot_id, config_verbosity),
+    : HydraPipeline(config, robot_id, config_verbosity, freeze_global_info),
       step_mode_only_(step_mode_only) {
   GlogSingleton::instance().setLogLevel(0, 0, false);
   config::Settings().print_width = 100;
@@ -185,10 +186,11 @@ void addBindings(pybind11::module_& m) {
       .def_readwrite("body_p_sensor", &PythonCamera::body_p_sensor);
 
   py::class_<HydraPythonPipeline>(m, "HydraPipeline")
-      .def(py::init<const PipelineConfig&, int, int, bool>(),
+      .def(py::init<const PipelineConfig&, int, int, bool, bool>(),
            "config"_a,
            "robot_id"_a = 0,
            "config_verbosity"_a = 0,
+           "freeze_global_info"_a = false,
            "use_step_mode"_a = true)
       .def("init", &HydraPythonPipeline::initPython, "config"_a, "camera"_a)
       .def("save", &HydraPythonPipeline::save)

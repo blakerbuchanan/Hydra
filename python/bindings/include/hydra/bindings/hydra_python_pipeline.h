@@ -62,6 +62,7 @@ class HydraPythonPipeline : public HydraPipeline {
   HydraPythonPipeline(const PipelineConfig& config,
                       int robot_id = 0,
                       int config_verbosity = 0,
+                      bool freeze_global_info = false,
                       bool step_mode_only = true);
 
   virtual ~HydraPythonPipeline();

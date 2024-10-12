@@ -56,8 +56,7 @@ def initialize_hydra_pipeline(cfg, habitat_data, output_path):
         pipeline_config.logs.log_dir = str(output_path)
 
     pipeline = hydra.HydraPipeline(
-        pipeline_config, robot_id=0, config_verbosity=cfg.config_verbosity
-    )
+        pipeline_config, robot_id=0, config_verbosity=cfg.config_verbosity, freeze_global_info=False)
     pipeline.init(configs, hydra.create_camera(habitat_data.camera_info))
 
     if output_path:

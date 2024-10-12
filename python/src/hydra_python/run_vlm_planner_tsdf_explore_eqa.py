@@ -4,6 +4,7 @@ import click
 import os
 import sys
 from pathlib import Path
+from copy import deepcopy
 
 import numpy as np
 import hydra_python as hydra
@@ -44,6 +45,7 @@ def main(cfg):
             hfov=cfg.habitat.hfov,
             z_offset=cfg.habitat.z_offset,
             camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
+        cfg_hydra_copy = OmegaConf.create(OmegaConf.to_container(cfg.hydra, resolve=True))
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
@@ -101,14 +103,14 @@ def main(cfg):
                     successes += 1
                     click.secho(f"Success at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 else:
-                    click.secho(f"Failire at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 break
             elif 'yes' in confidence:
                 if answer == answer_output:
                     successes_wo_done += 1
                     click.secho(f"Success without done at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 else:
-                    click.secho(f"Failire without done at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Failure without done at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                 break
             else:
                 if target_pose is not None:
