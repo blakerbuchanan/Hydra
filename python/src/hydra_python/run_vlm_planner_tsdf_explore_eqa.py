@@ -2,6 +2,7 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 import click
 import os
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -149,6 +150,16 @@ def main(cfg):
         pipeline.save()
 
 if __name__ == "__main__":
-    cfg = OmegaConf.load('/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa.yaml')
+    if len(sys.argv) < 2:
+        print("[ERROR]: Configuration path not provided. Please provide a path to configuration file for the VLM planner.")
+        sys.exit(1)  # Exit the script with an error code
+
+    config_path = sys.argv[1]
+    try:
+        cfg = OmegaConf.load(config_path)
+    except Exception as e:
+        print(f"Error loading configuration file: {e}")
+        sys.exit(1)
+
     OmegaConf.resolve(cfg)
     main(cfg)

@@ -2,7 +2,10 @@
 seed: 42
 exp_name: vlm_sg_eqa_exp
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
-vlm: 'gemini' # 'gemini' or 'gpt'
+
+vlm:
+  name: 'gemini' # 'gemini'
+  use_image: True
 
 data:
   question_data_path: '/home/saumyas/semnav_workspace/data/explore-eqa_semnav/questions.csv'

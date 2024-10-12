@@ -8,6 +8,7 @@ import base64
 from openai import OpenAI
 import google.generativeai as genai
 import os
+import mimetypes
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
@@ -116,6 +117,10 @@ def create_planner_response_schema(Goto_visited_node_action, Goto_object_node_ac
                     "answer": {"type": "string", "enum": ["yes", "no"]}
                 },
                 "required": ["explanation_conf", "answer"]
+            },
+            "img_desc": {
+                "type": "string",
+                "description": "A description of the current image"
             }
         },
         "required": ["steps", "answer", "confidence"]
@@ -270,6 +275,27 @@ class VLMPLannerEQA:
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
 
+        if self._use_image:
+            image_path = self._output_path / "current_img.png"
+            base64_image = encode_image(image_path)
+            mime_type = mimetypes.guess_type(image_path)[0]
+            messages.append(
+                {
+                    "role": "user",
+                    "parts": [
+                        {
+                            "text": "CURRENT IMAGE: This image represents the current view of the agent. Use this as additional information to answer the question."
+                        },
+                        {
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": base64_image
+                            }
+                        }
+                    ]
+                }
+            )
+
         Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
 
         succ=False
@@ -291,12 +317,16 @@ class VLMPLannerEQA:
         
         json_response = response.text
         response_dict = json.loads(json_response)
-
         step = response_dict["steps"][0]
         confidence = response_dict["confidence"]
         answer = response_dict["answer"]["answer"]
 
-        return step, confidence, answer
+        if self._use_image:
+            img_desc = response_dict["img_desc"]
+        else:
+            img_desc = ' '
+
+        return step, confidence, answer, img_desc
     
 
     def get_next_action(self):
