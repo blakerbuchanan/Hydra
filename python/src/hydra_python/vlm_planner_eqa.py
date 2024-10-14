@@ -85,7 +85,7 @@ def create_planner_response_schema(Goto_visited_node_action, Goto_object_node_ac
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["object_node", "frontier_node", "done_step"]
+                            "enum": ["Goto_object_node_step", "Goto_frontier_node_step", "DoneStep"]
                         },
                         "explanation_obj": {"type": "string"},
                         "explanation_frontier": {"type": "string"},
@@ -121,9 +121,13 @@ def create_planner_response_schema(Goto_visited_node_action, Goto_object_node_ac
             "img_desc": {
                 "type": "string",
                 "description": "A description of the current image"
+            },
+            "use_image": {
+                "type": "boolean",
+                "description": "A boolean indicating whether we should pass the image to the VLM"
             }
         },
-        "required": ["steps", "answer", "confidence"]
+        "required": ["steps", "answer", "confidence", "img_desc", "use_image"]
     }
 
 class VLMPLannerEQA:
@@ -165,7 +169,7 @@ class VLMPLannerEQA:
     
     def get_actions(self):
         Goto_visited_node_action = Enum('Goto_visited_node_action', {ac: ac for ac in self.sg_sim.visited_node_ids}, type=str)
-        Goto_object_node_action = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
+        Goto_object_node_action = Enum('Goto_object_node_action', {id: id for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
         Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
         return Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options
@@ -194,11 +198,13 @@ class VLMPLannerEQA:
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
             Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
+            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore. You can also directly choose object nodes for exploration.\
             You are required to report an answer to the question, even if Confidence is low. This answer should include the letter associated with the choices available.\
             You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with high Confidence.\
             You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
-            To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. \n \
+            You will also be provided with a list of semantic labels (SEMANTIC_LABEL). These semantic labels will be names of objects, rooms, and buildings, and can guide exploration to answer the question. \
+            If any of the semantic labels might be of objects or rooms of interest, set use_image to True so you can use an image to better answer the question. \
+            To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. If the question involves finding an object, you should prioritize Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
             Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
         return prompt
@@ -265,7 +271,10 @@ class VLMPLannerEQA:
             img_desc = ' '
         
         return step, plan.parsed.confidence, plan.parsed.answer, img_desc
-        
+    
+    # TODO(blake): 1) further structure output. Sometimes the 'value' field in steps[action] is a string rep. of a vector, sometimes just a string like "frontier_1".
+    # TODO(blake): 2) If Goto_object_node_step is chosen, it's possible the object ID won't be found when calling self.sg_sim.get_position_from_id(step["action"]["name"])
+    # TODO(blake): 3) Sometimes the final answer, even if correct, is classified as a Failure.
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
         messages=[
@@ -275,7 +284,40 @@ class VLMPLannerEQA:
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
 
-        if self._use_image:
+        # We can get the semantic information here
+        semantic_data = self.sg_sim.get_semantic_info()
+
+        messages.append(
+            {
+            "role": "user",
+            "parts": [{"text": f"SEMANTIC_LABEL: {label}"} for label in semantic_data]
+            }
+        )
+
+        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
+        
+        succ=False
+        while not succ:
+            try:
+                start = time.time()
+
+                response = gemini_model.generate_content(messages,
+                    generation_config=genai.GenerationConfig(
+                        response_mime_type="application/json", response_schema=create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
+                )
+
+                print(f"Time taken for planning next step: {time.time()-start}s")
+                if (True): # If the model refuses to respond, you will get a refusal message
+                    succ=True
+            except Exception as e:
+                print(f"An error occurred: {e}. Sleeping for 45s")
+                time.sleep(45)
+
+        json_response = response.text
+        response_dict = json.loads(json_response)
+        use_image = response_dict["use_image"]
+
+        if use_image:
             image_path = self._output_path / "current_img.png"
             base64_image = encode_image(image_path)
             mime_type = mimetypes.guess_type(image_path)[0]
@@ -295,8 +337,6 @@ class VLMPLannerEQA:
                     ]
                 }
             )
-
-        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
 
         succ=False
         while not succ:
@@ -320,8 +360,9 @@ class VLMPLannerEQA:
         step = response_dict["steps"][0]
         confidence = response_dict["confidence"]
         answer = response_dict["answer"]["answer"]
+        import ipdb; ipdb.set_trace()
 
-        if self._use_image:
+        if use_image:
             img_desc = response_dict["img_desc"]
         else:
             img_desc = ' '

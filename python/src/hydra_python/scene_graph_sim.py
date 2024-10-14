@@ -11,6 +11,7 @@ class SceneGraphSim:
         self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
         self.rr_logger = rr_logger
         self.thresh = 2.0
+        self.current_semantic_labels = []
 
         self.update(frontier_nodes)
         
@@ -18,6 +19,9 @@ class SceneGraphSim:
         with open(self._sg_path, "r") as f:
             self.scene_graph = json.load(f)
         self.netx_sg = json_graph.node_link_graph(self.scene_graph)
+    
+    def get_semantic_info(self):
+        return self.current_semantic_labels
                 
     @property
     def scene_graph_str(self):
@@ -81,6 +85,8 @@ class SceneGraphSim:
         object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
         self.filtered_obj_positions, self.filtered_obj_ids = [], []
         ## Adding other nodes
+        
+        self.current_semantic_labels = []
         for node in self.pipeline.graph.nodes:
             attr={}
             nodeid, node_type, node_name = self._get_node_properties(node)
@@ -92,6 +98,8 @@ class SceneGraphSim:
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
+                if node.attributes.name not in self.current_semantic_labels:
+                    self.current_semantic_labels.append(node.attributes.name)
             
             # Filtering
             if 'o' in node.id.category.lower():

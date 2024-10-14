@@ -45,7 +45,7 @@ def main(cfg):
             hfov=cfg.habitat.hfov,
             z_offset=cfg.habitat.z_offset,
             camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
-        cfg_hydra_copy = OmegaConf.create(OmegaConf.to_container(cfg.hydra, resolve=True))
+            
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
