@@ -14,6 +14,7 @@ import yaml
 
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
+from transformers import CLIPProcessor, CLIPModel
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -252,7 +253,9 @@ class HabitatInterface:
             agent_z_offset=0.0,
             hfov=90.0,
             z_offset=0.5,
-            camera_tilt=0):
+            camera_tilt=0,
+            get_clip_embeddings=False,
+            img_subsample_freq=1):
         
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
@@ -260,6 +263,9 @@ class HabitatInterface:
         self.inflation_radius = inflation_radius
         self.z_offset = z_offset
         self._camera_tilt = camera_tilt
+        self.question = ' '
+        self._get_clip_embeddings = get_clip_embeddings
+        self._img_subsample_freq = img_subsample_freq
 
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
@@ -285,8 +291,26 @@ class HabitatInterface:
 
         self._obs = None
         self._labels = None
+        self.question_embed = None
+
+        if get_clip_embeddings:
+            self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
         self._make_navgraph(inflation_radius=inflation_radius)
+
+    def update_question(self, question):
+        self.question = question
+        if self._get_clip_embeddings:
+            self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True)
+    
+    def calc_similarity_score(self, images):
+        if self.question_embed is not None:
+            imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=True)
+            outputs = self.model(**self.question_embed, **imgs_embed)
+            logits_per_text = outputs.logits_per_image # this is the image-text similarity score
+            probs = logits_per_text.softmax(dim=0) # we can take the softmax to get the label probabilities
+            import ipdb; ipdb.set_trace()
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {

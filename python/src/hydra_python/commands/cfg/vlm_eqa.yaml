@@ -1,8 +1,9 @@
 # General
 seed: 42
-# exp_name: explore_eqa_random
-exp_name: explore_eqa_planner_imgs
+exp_name: explore_eqa_random_test
+# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
+results_filename: ${vlm.name}_images_${vlm.use_image}
 
 vlm:
   name: 'gpt' # 'gemini'
@@ -32,6 +33,8 @@ habitat:
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
+  get_clip_embeddings: True
+  img_subsample_freq: 4
 
 
 hydra:

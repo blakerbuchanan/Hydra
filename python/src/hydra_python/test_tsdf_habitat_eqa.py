@@ -41,7 +41,9 @@ def main(cfg):
             agent_z_offset=cfg.habitat.agent_z_offset,
             hfov=cfg.habitat.hfov,
             z_offset=cfg.habitat.z_offset,
-            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
+            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
+            get_clip_embeddings=cfg.habitat.get_clip_embeddings,
+            img_subsample_freq=cfg.habitat.img_subsample_freq)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
@@ -88,11 +90,14 @@ def main(cfg):
         rr_logger.log_navmesh_data(positions_navmesh)
 
         vlm_planner = hydra.VLMPLannerEQA(
+            cfg.vlm,
             questions_data[question_ind], 
             question_path, 
             pipeline, 
             rr_logger, 
             tsdf_planner.frontier_to_sample_normal)
+        
+        habitat_data.update_question(vlm_planner._question)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 200

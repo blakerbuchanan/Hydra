@@ -228,6 +228,7 @@ def run_eqa(
 ):
 
     agent_positions, agent_quats_wxyz = [], []
+    imgs_rgb= []
     step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
     for pose in pose_source:
         pipeline.graph.save(output_path / "dsg.json", False)
@@ -235,6 +236,7 @@ def run_eqa(
 
         start = time.time()
         _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
+        imgs_rgb.append(habitat_data.rgb)
         step_time += time.time()-start
 
         agent_pos, agent_quat_wxyz = habitat_data.get_state(is_eqa=True)
@@ -310,3 +312,6 @@ def run_eqa(
     if save_image:
         curr_img = Image.fromarray(habitat_data.rgb)
         curr_img.save(output_path / "current_img.png")
+    
+    if habitat_data._get_clip_embeddings:
+        habitat_data.calc_similarity_score(imgs_rgb)

@@ -31,6 +31,8 @@ habitat:
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
+  get_clip_embeddings: False
+  img_subsample_freq: 1
 
 
 hydra:

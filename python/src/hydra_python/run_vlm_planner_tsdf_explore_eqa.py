@@ -2,7 +2,7 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 import click
 import os
-import sys
+import sys, json
 from pathlib import Path
 from copy import deepcopy
 
@@ -17,23 +17,57 @@ from hydra_python.frontier_mapping_eqa.geom import *
 from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 
+def load_experiment_data(filename='experiment_results.json'):
+    if not os.path.exists(filename):
+        data={}
+        with open(filename, 'w') as file:
+            json.dump(data, file, indent=4)
+    
+    with open(filename, 'r') as file:
+        return json.load(file)
+
+def save_experiment_data(data=None, filename='experiment_status.json'):
+    with open(filename, 'w') as file:
+        json.dump(data, file, indent=4)
+
+def log_experiment_status(experiment_id, success, metrics=None, filename='experiment_status.json'):
+    data = load_experiment_data(filename)
+    data[experiment_id] = {"Success": success}
+    if metrics:
+        data[experiment_id]["metrics"] = metrics
+    save_experiment_data(data, filename)
+
+def should_skip_experiment(experiment_id, filename='experiment_status.json'):
+    data = load_experiment_data(filename)
+    return experiment_id in data
+
 def main(cfg):
     questions_data, init_pose_data = load_eqa_data(cfg.data)
 
     output_path = cfg.output_path
     os.makedirs(cfg.output_path, exist_ok=True)
     output_path = Path(cfg.output_path)
-    # output_path = hydra.resolve_output_path(cfg.output_path)
+    results_filename = output_path / f'{cfg.results_filename}.json'
 
-    successes, successes_wo_done = 0, 0
-    for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [0,1]:
+    successes = 0
+    test_len = 40
+    for question_ind in tqdm(range(min(test_len, len(questions_data)))):
+        if question_ind in np.arange(14):
             continue
+
         question_data = questions_data[question_ind]
-        print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
+        scene_floor = question_data["scene"] + "_" + question_data["floor"]
+        answer = question_data["answer"]
+        experiment_id = f'{question_ind}_{question_data["scene"]}_{question_data["floor"]}'
+
+        if should_skip_experiment(experiment_id, filename=results_filename):
+            click.secho(f'Skipping==Index: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}=======',fg="yellow",)
+            continue
+        else:
+            click.secho(f'Executing=========Index: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}=======',fg="green",)
 
         # Planner reset with the new quesion
-        question_path = hydra.resolve_output_path(output_path / f'{question_ind}_{question_data["scene"]}')
+        question_path = hydra.resolve_output_path(output_path / experiment_id)
         scene_name = f'{cfg.data.scene_data_path}/{question_data["scene"]}/{question_data["scene"][6:]}.basis.glb'
         habitat_data = habitat.HabitatInterface(
             scene_name, 
@@ -44,15 +78,15 @@ def main(cfg):
             agent_z_offset=cfg.habitat.agent_z_offset,
             hfov=cfg.habitat.hfov,
             z_offset=cfg.habitat.z_offset,
-            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180)
+            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
+            get_clip_embeddings=cfg.habitat.get_clip_embeddings,
+            img_subsample_freq=cfg.habitat.img_subsample_freq)
             
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
 
         # Extract initial pose
-        scene_floor = question_data["scene"] + "_" + question_data["floor"]
-        answer = question_data["answer"]
         init_pts = init_pose_data[scene_floor]["init_pts"]
         init_angle = init_pose_data[scene_floor]["init_angle"]
 
@@ -92,25 +126,25 @@ def main(cfg):
             pipeline, 
             rr_logger, 
             tsdf_planner.frontier_to_sample_normal,)
+        
+        habitat_data.update_question(vlm_planner._question)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
-        num_steps = 100
+        num_steps = 20
+        succ = False
         for cnt_step in range(num_steps):
             target_pose, done, confidence, answer_output = vlm_planner.get_next_action()
             rr_logger.log_text_data(vlm_planner.full_plan)
-            if done and 'yes' in confidence:
-                if answer == answer_output:
+
+            if 'yes' in confidence:
+                succ = answer == answer_output
+                if succ:
                     successes += 1
-                    click.secho(f"Success at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    log_experiment_status
                 else:
-                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
-                break
-            elif 'yes' in confidence:
-                if answer == answer_output:
-                    successes_wo_done += 1
-                    click.secho(f"Success without done at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
-                else:
-                    click.secho(f"Failure without done at step {cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
+                
                 break
             else:
                 if target_pose is not None:
@@ -148,7 +182,9 @@ def main(cfg):
                             vlm_planner=vlm_planner,
                             save_image=cfg.vlm.use_image,
                         )
-
+        
+        log_experiment_status(experiment_id, succ, metrics={'steps': cnt_step}, filename=results_filename)
+        habitat_data._sim.close(destroy=True)
         pipeline.save()
 
 if __name__ == "__main__":

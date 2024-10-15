@@ -9,6 +9,7 @@ from openai import OpenAI
 import google.generativeai as genai
 import os
 import mimetypes
+import ast
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
@@ -150,13 +151,14 @@ class VLMPLannerEQA:
 
     def _get_instruction(self, question_data):
         question = question_data["question"]
-        self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
+        # self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
+
+        self.choices = ast.literal_eval(question_data["choices"])
         # Re-format the question to follow LLaMA style
         vlm_question = question
         self.vlm_pred_candidates = ["A", "B", "C", "D"]
         for token, choice in zip(self.vlm_pred_candidates, self.choices):
             vlm_question += "\n" + token + "." + " " + choice
-        
         return vlm_question
 
     @property
@@ -169,8 +171,11 @@ class VLMPLannerEQA:
     
     def get_actions(self):
         Goto_visited_node_action = Enum('Goto_visited_node_action', {ac: ac for ac in self.sg_sim.visited_node_ids}, type=str)
-        Goto_object_node_action = Enum('Goto_object_node_action', {id: id for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
-        Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
+        Goto_object_node_action = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
+        if len(self.sg_sim.frontier_node_ids)> 0:
+            Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
+        else:
+            Goto_frontier_node_action = Enum('Goto_frontier_node_action', {'frontier_0': 'Do not choose this option. No more frontiers left.'}, type=str)
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
         return Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options
     
@@ -192,21 +197,37 @@ class VLMPLannerEQA:
     #     return prompt
     
     
+    # @property
+    # def agent_role_prompt(self):
+    #     prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment.\
+    #         As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
+    #         Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
+    #         Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
+    #         Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore. You can also directly choose object nodes for exploration.\
+    #         You are required to report an answer to the question, even if Confidence is low. This answer should include the letter associated with the choices available.\
+    #         You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with high Confidence.\
+    #         You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
+    #         You will also be provided with a list of semantic labels (SEMANTIC_LABEL). These semantic labels will be names of objects, rooms, and buildings, and can guide exploration to answer the question. \
+    #         If any of the semantic labels might be of objects or rooms of interest, set use_image to True so you can use an image to better answer the question. \
+    #         To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. If the question involves finding an object, you should prioritize Goto_object_node_step. \n \
+    #         Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
+    #         Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
+    #     return prompt
+    
     @property
     def agent_role_prompt(self):
-        prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment.\
+        prompt = "You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
-            Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
+            Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'frontier' nodes and 'objects' in the scene.\
             Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore. You can also directly choose object nodes for exploration.\
-            You are required to report an answer to the question, even if Confidence is low. This answer should include the letter associated with the choices available.\
-            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with high Confidence.\
+            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
+            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with very high Confidence. If you think that exploring the scene more or going nearer to relevant objects will give you more information to better answer the question, you should do that and anwer 'no'. \n  \
             You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
-            You will also be provided with a list of semantic labels (SEMANTIC_LABEL). These semantic labels will be names of objects, rooms, and buildings, and can guide exploration to answer the question. \
-            If any of the semantic labels might be of objects or rooms of interest, set use_image to True so you can use an image to better answer the question. \
-            To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. If the question involves finding an object, you should prioritize Goto_object_node_step. \n \
-            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
-            Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
+            You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
+            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. Use this to explore unseen areas to discover new areas/rooms/objects. Provide explanation for why you are choosing a specific frontier (e.g. relevant objects near it)\n \
+            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. \
+            This action will not provide much new information in the scene graph but will take you nearer to a seen location if you want to reexamine it. \n \
+            In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not."
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -260,6 +281,7 @@ class VLMPLannerEQA:
                     succ=True
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
+                import ipdb; ipdb.set_trace()
                 time.sleep(1)
 
         plan = completion.choices[0].message
@@ -285,14 +307,14 @@ class VLMPLannerEQA:
         ]
 
         # We can get the semantic information here
-        semantic_data = self.sg_sim.get_semantic_info()
+        # semantic_data = self.sg_sim.get_semantic_info()
 
-        messages.append(
-            {
-            "role": "user",
-            "parts": [{"text": f"SEMANTIC_LABEL: {label}"} for label in semantic_data]
-            }
-        )
+        # messages.append(
+        #     {
+        #     "role": "user",
+        #     "parts": [{"text": f"SEMANTIC_LABEL: {label}"} for label in semantic_data]
+        #     }
+        # )
 
         Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
         
@@ -360,7 +382,6 @@ class VLMPLannerEQA:
         step = response_dict["steps"][0]
         confidence = response_dict["confidence"]
         answer = response_dict["answer"]["answer"]
-        import ipdb; ipdb.set_trace()
 
         if use_image:
             img_desc = response_dict["img_desc"]
