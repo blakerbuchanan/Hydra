@@ -396,27 +396,3 @@ class SceneGraphSim:
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])
-
-    def get_trajectory_to_node(self, agent_pos, agent_quat_wxyz, target_pos):
-        """Get a trajectory from target_pos in navgraph G.
-        Agent pos and rotation are in world frame.
-        target_pos is taken from the hydra scenegraph"""
-
-        # Find closest node on graph
-        node_sequence = [x for x in self.G]
-        pos_nodes = np.array([self.navmesh_netx_graph.nodes[x]["position"] for x in self.navmesh_netx_graph]).squeeze()
-
-        start_idx = np.argmin(np.linalg.norm(pos_nodes - agent_pos, axis=-1))
-        end_idx = np.argmin(np.linalg.norm(pos_nodes - target_pos, axis=-1))
-
-        nodes = nx.shortest_path(self.navmesh_netx_graph, source=node_sequence[start_idx], target=node_sequence[end_idx], weight="weight")
-
-        positions_camera = [self.navmesh_netx_graph.nodes[x]["position"] for x in nodes]
-        
-        if len(positions_camera) < 2:
-            return None
-        
-        b_R_c = R.from_quat(agent_quat_wxyz).as_matrix()
-        poses = hydra.Trajectory.from_positions(
-            np.array(positions_camera), body_R_camera=b_R_c
-        )

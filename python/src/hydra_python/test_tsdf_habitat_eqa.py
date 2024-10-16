@@ -24,7 +24,7 @@ def main(cfg):
     # output_path = hydra.resolve_output_path(cfg.output_path)
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind==0:
+        if question_ind in np.arange(5):
             continue
         question_data = questions_data[question_ind]
         print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
@@ -97,7 +97,7 @@ def main(cfg):
             rr_logger, 
             tsdf_planner.frontier_to_sample_normal)
         
-        habitat_data.update_question(vlm_planner._question)
+        habitat_data.update_question(vlm_planner.clean_ques_ans)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 200

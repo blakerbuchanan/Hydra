@@ -291,11 +291,11 @@ class HabitatInterface:
 
         self._obs = None
         self._labels = None
-        self.question_embed = None
 
         if get_clip_embeddings:
             self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
             self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            self.question_embed = self.processor(text=[self.question], return_tensors="pt", padding=True)
 
         self._make_navgraph(inflation_radius=inflation_radius)
 
@@ -305,12 +305,11 @@ class HabitatInterface:
             self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True)
     
     def calc_similarity_score(self, images):
-        if self.question_embed is not None:
-            imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=True)
-            outputs = self.model(**self.question_embed, **imgs_embed)
-            logits_per_text = outputs.logits_per_image # this is the image-text similarity score
-            probs = logits_per_text.softmax(dim=0) # we can take the softmax to get the label probabilities
-            import ipdb; ipdb.set_trace()
+        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=True)
+        outputs = self.model(**self.question_embed, **imgs_embed)
+        logits_per_text = outputs.logits_per_image # this is the image-text similarity score
+        probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities
+        return probs.detach().numpy(), logits_per_text.squeeze().detach().numpy()
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {

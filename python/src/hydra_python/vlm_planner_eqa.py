@@ -152,13 +152,15 @@ class VLMPLannerEQA:
     def _get_instruction(self, question_data):
         question = question_data["question"]
         # self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
-
+        self.clean_ques_ans = question_data["question"]
         self.choices = ast.literal_eval(question_data["choices"])
         # Re-format the question to follow LLaMA style
         vlm_question = question
         self.vlm_pred_candidates = ["A", "B", "C", "D"]
         for token, choice in zip(self.vlm_pred_candidates, self.choices):
             vlm_question += "\n" + token + "." + " " + choice
+            if ("do not choose" not in choice.lower()) and (choice.lower() not in ['yes', 'no']):
+                self.clean_ques_ans += "  " + token + "." + " " + choice
         return vlm_question
 
     @property

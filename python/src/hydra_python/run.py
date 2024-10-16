@@ -8,6 +8,7 @@ from hydra_python.frontier_mapping_eqa.utils import get_cam_pose_tsdf, pos_habit
 from voxel_mapping import Observations
 import threading, time
 from PIL import Image
+from scipy.special import softmax
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -314,4 +315,31 @@ def run_eqa(
         curr_img.save(output_path / "current_img.png")
     
     if habitat_data._get_clip_embeddings:
-        habitat_data.calc_similarity_score(imgs_rgb)
+        probs, logits = habitat_data.calc_similarity_score(imgs_rgb)
+        best = np.argmax(probs)
+        imgs = np.array(imgs_rgb[::habitat_data._img_subsample_freq])
+
+        # Remove black images
+        w, h = imgs[0].shape[0], imgs[0].shape[1]
+        black_pixels_mask = np.all(imgs == 0, axis=-1)
+        num_black_pixels = np.sum(black_pixels_mask, axis=(1, 2))
+        useful_img_idxs = num_black_pixels < 0.3*w*h
+        useful_imgs = imgs[useful_img_idxs]
+        useful_logits = logits[useful_img_idxs]
+        probs = softmax(np.array(useful_logits))
+        best = np.argmax(probs)
+
+        # labeled_frames = []
+        # for idx in range(len(useful_imgs)):
+        #     color_img = useful_imgs[idx].copy()
+        #     label = f'{probs[idx]:.2f}'
+        #     if idx == best:
+        #         label = label + '_best'
+        #     cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
+        #     labeled_frames.append(color_img)
+
+        # imageio.mimsave(output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
+
+        if save_image:
+            curr_img = Image.fromarray(useful_imgs[best])
+            curr_img.save(output_path / "current_img.png")

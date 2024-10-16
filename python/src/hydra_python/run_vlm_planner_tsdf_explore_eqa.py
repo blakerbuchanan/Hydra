@@ -52,7 +52,7 @@ def main(cfg):
     successes = 0
     test_len = 40
     for question_ind in tqdm(range(min(test_len, len(questions_data)))):
-        if question_ind in np.arange(14):
+        if question_ind in np.arange(1):
             continue
 
         question_data = questions_data[question_ind]
@@ -127,7 +127,7 @@ def main(cfg):
             rr_logger, 
             tsdf_planner.frontier_to_sample_normal,)
         
-        habitat_data.update_question(vlm_planner._question)
+        habitat_data.update_question(vlm_planner.clean_ques_ans)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 20
