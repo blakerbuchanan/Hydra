@@ -143,10 +143,11 @@ def main(cfg):
                 if succ:
                     successes += 1
                     click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    click.secho(f"VLM Planner Answer: {answer_output}, Answer: {answer}",fg="blue",)
                     log_experiment_status
                 else:
                     click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
-                
+                    click.secho(f"VLM Planner Answer: {answer_output}, Answer: {answer}",fg="red",)
                 break
             else:
                 if target_pose is not None:

@@ -1,12 +1,12 @@
 # General
 seed: 42
 exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip_room
-output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
+output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 
 vlm:
   name: 'gemini' # 'gemini'
-  use_image: False
+  use_image: True
   enrich_sg_cfg:
     enrich_room: False
 
@@ -34,8 +34,8 @@ habitat:
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
-  get_clip_embeddings: False
-  img_subsample_freq: 3
+  get_clip_embeddings: True
+  img_subsample_freq: 2
 
 
 hydra:

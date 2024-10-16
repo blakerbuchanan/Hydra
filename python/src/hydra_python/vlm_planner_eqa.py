@@ -96,9 +96,12 @@ def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_ac
                     properties={
                         'name': genai.protos.Schema(
                             type=genai.protos.Type.STRING,
-                            enum=list(Goto_object_node_action) + list(Goto_frontier_node_action) + ["done_with_task"]
+                            enum=[member.name for member in Goto_object_node_action] + [member.name for member in Goto_frontier_node_action] + ["done_with_task"]
                         ),
-                        'value': genai.protos.Schema(type=genai.protos.Type.STRING)
+                        'value': genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            enum=[member.value for member in Goto_object_node_action] + [member.name for member in Goto_frontier_node_action] + ["done_with_task"]
+                        ),
                     },
                     required=['name', 'value']
                 )
@@ -378,7 +381,6 @@ class VLMPLannerEQA:
                 print(f"An error occurred: {e}. Sleeping for 45s")
                 time.sleep(45)
         
-        import ipdb; ipdb.set_trace()
         json_response = response.text
         response_dict = json.loads(json_response)
         step = response_dict["steps"][0]
