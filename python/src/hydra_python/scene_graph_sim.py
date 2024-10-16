@@ -170,15 +170,6 @@ class SceneGraphSim:
 
             # self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
 
-            if ('visited' in source_type) and ('visited' in target_type or 'frontier' in target_type):
-                self.navmesh_netx_graph.add_edges_from([(
-                    sourceid, targetid,
-                    {'source_name': source_name,
-                    'target_name': target_name,
-                    'type': edge_type,
-                    'weight': np.linalg.norm(source_node.attributes.position-target_node.attributes.position)}
-                )])
-
             # Filtering scene graph
             if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
                 continue
@@ -189,7 +180,7 @@ class SceneGraphSim:
                 continue
             if 'frontier' in source_type or 'frontier' in target_type: # ALL FRONTIERS for now, we add frontiers later
                 continue
-            if 'agent' in source_type or 'agent' in target_type: # agent->agent
+            if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
 
             self.filtered_netx_graph.add_edges_from([(
@@ -414,7 +405,6 @@ class SceneGraphSim:
     def get_current_semantic_state_str(self):
         agent_pos = self.filtered_netx_graph.nodes[self.curr_agent_id]['position']
         agent_loc_str = f'The agent is currently at node {self.curr_agent_id} at position {agent_pos}'
-
         room_name = [self.filtered_netx_graph.nodes[room_id]['name'] for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id) for room_id in self.filtered_netx_graph.predecessors(place_id)]
         room_str = '' if  room_name == 'room' else f' in room {room_name[0]}'
         return f'{agent_loc_str} {room_str}'

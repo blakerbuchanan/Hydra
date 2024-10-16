@@ -347,4 +347,4 @@ def run_eqa(
         if save_image:
             curr_img = Image.fromarray(useful_imgs[best])
             curr_img.save(output_path / "current_img.png")
-        print(f"===========CLIP emb: {time.time()-start}")
+        print(f"===========time taken for CLIP emb: {time.time()-start}")
