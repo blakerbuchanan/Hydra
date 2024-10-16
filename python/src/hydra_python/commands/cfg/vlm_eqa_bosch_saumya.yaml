@@ -6,6 +6,8 @@ output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 vlm:
   name: 'gemini' # 'gemini'
   use_image: False
+  enrich_sg_cfg:
+    enrich_room: False
 
 data:
   question_data_path: '/home/saumyas/semnav_workspace/data/explore-eqa_semnav/questions.csv'

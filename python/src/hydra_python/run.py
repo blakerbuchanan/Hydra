@@ -315,6 +315,8 @@ def run_eqa(
         curr_img.save(output_path / "current_img.png")
     
     if habitat_data._get_clip_embeddings:
+
+        start = time.time()
         probs, logits = habitat_data.calc_similarity_score(imgs_rgb)
         best = np.argmax(probs)
         imgs = np.array(imgs_rgb[::habitat_data._img_subsample_freq])
@@ -343,3 +345,4 @@ def run_eqa(
         if save_image:
             curr_img = Image.fromarray(useful_imgs[best])
             curr_img.save(output_path / "current_img.png")
+        print(f"===========CLIP emb: {time.time()-start}")

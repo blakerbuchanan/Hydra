@@ -1,17 +1,41 @@
-import json
+import json, time
 import numpy as np
 import networkx as nx
 from networkx.readwrite import json_graph
 from itertools import chain
 
+from enum import Enum
+from pydantic import BaseModel
+from openai import OpenAI
+
+client = OpenAI()
+
+class Rooms(str, Enum):
+    bedroom = "bedroom"
+    bathroom = "bathroom"
+    living_room = "living room"
+    kitchen = "kitchen"
+    lobby = "lobby"
+    dining_room = "dining room"
+    patio = "patio"
+    closet = "closet"
+    study = "study room"
+    staircase = "staircase"
+    porch = "porch"
+    
+class Room_response(BaseModel):
+    explanation: str
+    room: Rooms
+
 class SceneGraphSim:
-    def __init__(self, sg_path, pipeline, rr_logger, frontier_nodes):
+    def __init__(self, sg_path, pipeline, rr_logger, frontier_nodes, enrich_sg_cfg=False):
         self._sg_path = sg_path / "filtered_dsg.json"
         self.pipeline = pipeline
         self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
         self.rr_logger = rr_logger
         self.thresh = 2.0
         self.current_semantic_labels = []
+        self._enrich_room = enrich_sg_cfg.enrich_room
 
         self.update(frontier_nodes)
         
@@ -56,7 +80,7 @@ class SceneGraphSim:
         self.filtered_netx_graph = nx.DiGraph()
         self.navmesh_netx_graph = nx.Graph()
 
-        self._visited_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], []
+        self._room_ids, self._visited_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
 
         # Clear all objects from a specific namespace
         self.rr_logger.log_clear("world/hydra_graph")
@@ -80,7 +104,6 @@ class SceneGraphSim:
                     self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
         self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
         self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
-        
         
         object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
         self.filtered_obj_positions, self.filtered_obj_ids = [], []
@@ -126,6 +149,9 @@ class SceneGraphSim:
                 if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
                     # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
                     self._frontier_node_ids.append(nodeid)
+            
+            if 'r' in node.id.category.lower():
+                self._room_ids.append(nodeid)
             
             # DONT ADD FRONTIER OR PLACE NODES
             if 'f' in node.id.category.lower() or 'p' in node.id.category.lower():
@@ -182,7 +208,7 @@ class SceneGraphSim:
                 'target_name': target_name,
                 'type': edge_type}
             )])
-        self.current_room = [n for n in self.filtered_netx_graph.predecessors(self.curr_agent_id) if 'room' in n]
+        
     
     
     def _add_frontier_nodes(self, frontier_nodes):
@@ -217,6 +243,22 @@ class SceneGraphSim:
                 )])
                 self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
+    def _enrich_sg(self):
+        if self._enrich_room:
+            for room_id in self._room_ids:
+                object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for place_id in self.filtered_netx_graph.successors(room_id) for object_id in self.filtered_netx_graph.successors(place_id)])
+                object_names = (', '.join(object_names)).replace('agent, ', '')
+                
+                start = time.time()
+                completion = client.beta.chat.completions.parse(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "user", "content": f"Given the list of objects: {object_names}. Which room are these objects most likely found in? Keep explanation very brief."}
+                    ],
+                    response_format=Room_response,
+                )
+                print(f" ======== time for room enrichment: {time.time()-start}")
+                self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
 
     def _get_node_properties(self, node):
         # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
@@ -382,10 +424,8 @@ class SceneGraphSim:
         agent_pos = self.filtered_netx_graph.nodes[self.curr_agent_id]['position']
         agent_loc_str = f'The agent is currently at node {self.curr_agent_id} at position {agent_pos}'
 
-        room_str = ''
-        if len(self.current_room) > 0:
-            room_str = f'in room {self.current_room[0]}'
-
+        room_name = [self.filtered_netx_graph.nodes[room_id]['name'] for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id) for room_id in self.filtered_netx_graph.predecessors(place_id)]
+        room_str = '' if  room_name == 'room' else f' in room {room_name[0]}'
         return f'{agent_loc_str} {room_str}'
     
     def update(self, frontier_nodes=None):
@@ -393,6 +433,7 @@ class SceneGraphSim:
         # self.test_sg()
         self._build_sg_from_hydra_graph()
         self._add_frontier_nodes(frontier_nodes)
+        self._enrich_sg()
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])

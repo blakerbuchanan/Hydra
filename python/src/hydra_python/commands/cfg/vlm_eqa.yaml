@@ -1,13 +1,15 @@
 # General
 seed: 42
-# exp_name: explore_eqa_random_test
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip
+exp_name: explore_eqa_random_test_enrich
+# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 
 vlm:
   name: 'gpt' # 'gemini'
   use_image: True
+  enrich_sg_cfg:
+    enrich_room: True
 
 data:
   question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'

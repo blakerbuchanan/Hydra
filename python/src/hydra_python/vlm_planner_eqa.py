@@ -147,7 +147,7 @@ class VLMPLannerEQA:
 
         self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
 
-        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger, frontier_nodes)
+        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger, frontier_nodes, enrich_sg_cfg=cfg.enrich_sg_cfg)
 
     def _get_instruction(self, question_data):
         question = question_data["question"]
