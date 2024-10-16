@@ -67,69 +67,97 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         image_description: str
     
     return PlannerResponse
+
+def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
+
+    class Confidence_check(str, Enum):
+        Confident_in_correctly_answering_question = "yes"
+        Not_confident_in_correctly_answering_question = "no"
+
+    action = genai.protos.Schema(
+            type = genai.protos.Type.OBJECT,
+            properties = {
+                'name':  genai.protos.Schema(type=genai.protos.Type.STRING),
+                'value':  genai.protos.Schema(type=genai.protos.Type.STRING)
+            },
+            required=['name', 'value']
+        )
     
-def create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
-
-    class Done_action(str, Enum):
-        Done = "done_with_task"
-
-    # Combine all action types into a single list
-    all_actions = list(Goto_object_node_action) + list(Goto_frontier_node_action) + list(Done_action)
-
-    return {
-        "type": "object",
-        "properties": {
-            "steps": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "type": "string",
-                            "enum": ["Goto_object_node_step", "Goto_frontier_node_step", "DoneStep"]
-                        },
-                        "explanation_obj": {"type": "string"},
-                        "explanation_frontier": {"type": "string"},
-                        "explanation_done": {"type": "string"},
-                        "action": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string", "enum": all_actions},
-                                "value": {"type": "string"}
-                            },
-                            "required": ["name", "value"]
-                        }
+    step = genai.protos.Schema(
+            type=genai.protos.Type.OBJECT,
+            properties={
+                'type': genai.protos.Schema(
+                    type=genai.protos.Type.STRING,
+                    enum=["Goto_frontier_node_step", "Goto_object_node_step", "Done_step"]
+                ),
+                'explanation': genai.protos.Schema(type=genai.protos.Type.STRING),
+                'action': genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties={
+                        'name': genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            enum=list(Goto_object_node_action) + list(Goto_frontier_node_action) + ["done_with_task"]
+                        ),
+                        'value': genai.protos.Schema(type=genai.protos.Type.STRING)
                     },
-                    "required": ["type", "action"]
-                }
+                    required=['name', 'value']
+                )
             },
-            "answer": {
-                "type": "object",
-                "properties": {
-                    "explanation_ans": {"type": "string"},
-                    "answer": {"type": "string", "enum": list(Answer_options)}
-                },
-                "required": ["explanation_ans", "answer"]
-            },
-            "confidence": {
-                "type": "object",
-                "properties": {
-                    "explanation_conf": {"type": "string"},
-                    "answer": {"type": "string", "enum": ["yes", "no"]}
-                },
-                "required": ["explanation_conf", "answer"]
-            },
-            "img_desc": {
-                "type": "string",
-                "description": "A description of the current image"
-            },
-            "use_image": {
-                "type": "boolean",
-                "description": "A boolean indicating whether we should pass the image to the VLM"
-            }
+            required=['type', 'explanation', 'action']
+        )
+
+    answer = genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties={
+                        'explanation_ans': genai.protos.Schema(
+                            type=genai.protos.Type.STRING
+                        ),
+                        'answer': genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            enum=[member.name for member in Answer_options]
+                        ),
+                        'value': genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            enum=[member.value for member in Answer_options]
+                        ),
+                    },
+                    required=['explanation_ans', 'answer', 'value']
+                )
+
+    confidence = genai.protos.Schema(
+                    type=genai.protos.Type.OBJECT,
+                    properties={
+                        'explanation_conf': genai.protos.Schema(
+                            type=genai.protos.Type.STRING
+                        ),
+                        'answer': genai.protos.Schema(
+                            type=genai.protos.Type.STRING,
+                            enum=list(Confidence_check))
+                    },
+                    required=['explanation_conf', 'answer']
+                )
+
+    image_desc = genai.protos.Schema(
+                    type = genai.protos.Type.STRING
+                )
+
+    steps = genai.protos.Schema(
+            type = genai.protos.Type.ARRAY,
+            items = step
+        )
+
+    response_schema = genai.protos.Schema(
+        type=genai.protos.Type.OBJECT,
+        properties = {
+            'steps': steps,
+            'answer': answer,
+            'confidence': confidence,
+            'img_desc': image_desc
         },
-        "required": ["steps", "answer", "confidence", "img_desc", "use_image"]
-    }
+        required=['steps', 'answer', 'confidence', 'img_desc']
+    )
+
+    return response_schema
 
 class VLMPLannerEQA:
     def __init__(self, cfg, question_data, output_path, pipeline, rr_logger, frontier_nodes=None):
@@ -230,6 +258,11 @@ class VLMPLannerEQA:
             Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. \
             This action will not provide much new information in the scene graph but will take you nearer to a seen location if you want to reexamine it. \n \
             In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not."
+        
+        if self._vlm_type == 'gemini':
+            prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
+                'value' should never be empty and should always look like frontier_<FRONTIER_NUMBER> or object_<OBJECT_NUMBER>, where <FRONTIER_NUMBER> and <OBJECT_NUMBER> represent the number assigned to the respective frontier or object in the scene graph. \
+                Furthermore, the 'steps' field should never be empty and should always contain one or more entries."
         return prompt
     
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -296,9 +329,6 @@ class VLMPLannerEQA:
         
         return step, plan.parsed.confidence, plan.parsed.answer, img_desc
     
-    # TODO(blake): 1) further structure output. Sometimes the 'value' field in steps[action] is a string rep. of a vector, sometimes just a string like "frontier_1".
-    # TODO(blake): 2) If Goto_object_node_step is chosen, it's possible the object ID won't be found when calling self.sg_sim.get_position_from_id(step["action"]["name"])
-    # TODO(blake): 3) Sometimes the final answer, even if correct, is classified as a Failure.
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
         messages=[
@@ -308,40 +338,9 @@ class VLMPLannerEQA:
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
 
-        # We can get the semantic information here
-        # semantic_data = self.sg_sim.get_semantic_info()
-
-        # messages.append(
-        #     {
-        #     "role": "user",
-        #     "parts": [{"text": f"SEMANTIC_LABEL: {label}"} for label in semantic_data]
-        #     }
-        # )
-
         Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
         
-        succ=False
-        while not succ:
-            try:
-                start = time.time()
-
-                response = gemini_model.generate_content(messages,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json", response_schema=create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
-                )
-
-                print(f"Time taken for planning next step: {time.time()-start}s")
-                if (True): # If the model refuses to respond, you will get a refusal message
-                    succ=True
-            except Exception as e:
-                print(f"An error occurred: {e}. Sleeping for 45s")
-                time.sleep(45)
-
-        json_response = response.text
-        response_dict = json.loads(json_response)
-        use_image = response_dict["use_image"]
-
-        if use_image:
+        if self._use_image:
             image_path = self._output_path / "current_img.png"
             base64_image = encode_image(image_path)
             mime_type = mimetypes.guess_type(image_path)[0]
@@ -369,7 +368,7 @@ class VLMPLannerEQA:
 
                 response = gemini_model.generate_content(messages,
                     generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json", response_schema=create_planner_response_schema(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
+                        response_mime_type="application/json", response_schema=create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
                 )
 
                 print(f"Time taken for planning next step: {time.time()-start}s")
@@ -379,13 +378,14 @@ class VLMPLannerEQA:
                 print(f"An error occurred: {e}. Sleeping for 45s")
                 time.sleep(45)
         
+        import ipdb; ipdb.set_trace()
         json_response = response.text
         response_dict = json.loads(json_response)
         step = response_dict["steps"][0]
         confidence = response_dict["confidence"]
         answer = response_dict["answer"]["answer"]
 
-        if use_image:
+        if self._use_image:
             img_desc = response_dict["img_desc"]
         else:
             img_desc = ' '
@@ -413,7 +413,10 @@ class VLMPLannerEQA:
                 self._done = True
                 target_pose = None
             else:
-                target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
+                if step['type'] == 'Goto_object_node_step':
+                    target_pose = self.sg_sim.get_position_from_id(step["action"]["value"])
+                else:
+                    target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
         if self._vlm_type == 'gpt':
             if 'done_with_task' in step.action.value:
                 self._done = True
