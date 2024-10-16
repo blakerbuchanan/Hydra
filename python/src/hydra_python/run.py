@@ -279,10 +279,10 @@ def run_eqa(
 
             # frontier_nodes = voxel_space.outside_frontier_points
 
-        if vlm_planner:
-            start = time.time()
-            vlm_planner.sg_sim.update(frontier_nodes)
-            sg_update_time += time.time()-start
+        # if vlm_planner:
+        #     start = time.time()
+        #     vlm_planner.sg_sim.update(frontier_nodes)
+        #     sg_update_time += time.time()-start
 
         if rr_logger:
             start = time.time()
@@ -307,7 +307,9 @@ def run_eqa(
         voxel_log_time += time.time()-start
     
     if vlm_planner:
+        start = time.time()
         vlm_planner.sg_sim.update(frontier_nodes)
+        sg_update_time += time.time()-start
     print(f"{step_time=} {frontier_update_time=} {voxel_log_time=} {sg_update_time=} {mesh_log_time=}")
 
     if save_image:

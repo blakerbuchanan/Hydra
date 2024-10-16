@@ -1,7 +1,7 @@
 from tqdm import tqdm
 from omegaconf import OmegaConf
 import click
-import os
+import os, time
 import sys, json
 from pathlib import Path
 from copy import deepcopy
@@ -133,7 +133,9 @@ def main(cfg):
         num_steps = 20
         succ = False
         for cnt_step in range(num_steps):
+            start = time.time()
             target_pose, done, confidence, answer_output = vlm_planner.get_next_action()
+            click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
 
             if 'yes' in confidence:

@@ -1,7 +1,7 @@
 # General
 seed: 42
-exp_name: explore_eqa_random_test_enrich
-# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip
+# exp_name: explore_eqa_random_test_enrich
+exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip_room
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 

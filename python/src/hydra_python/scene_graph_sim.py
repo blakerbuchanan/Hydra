@@ -34,7 +34,6 @@ class SceneGraphSim:
         self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
         self.rr_logger = rr_logger
         self.thresh = 2.0
-        self.current_semantic_labels = []
         self._enrich_room = enrich_sg_cfg.enrich_room
 
         self.update(frontier_nodes)
@@ -43,9 +42,6 @@ class SceneGraphSim:
         with open(self._sg_path, "r") as f:
             self.scene_graph = json.load(f)
         self.netx_sg = json_graph.node_link_graph(self.scene_graph)
-    
-    def get_semantic_info(self):
-        return self.current_semantic_labels
                 
     @property
     def scene_graph_str(self):
@@ -78,7 +74,6 @@ class SceneGraphSim:
 
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
-        self.navmesh_netx_graph = nx.Graph()
 
         self._room_ids, self._visited_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
 
@@ -109,7 +104,6 @@ class SceneGraphSim:
         self.filtered_obj_positions, self.filtered_obj_ids = [], []
         ## Adding other nodes
         
-        self.current_semantic_labels = []
         for node in self.pipeline.graph.nodes:
             attr={}
             nodeid, node_type, node_name = self._get_node_properties(node)
@@ -121,8 +115,6 @@ class SceneGraphSim:
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
-                if node.attributes.name not in self.current_semantic_labels:
-                    self.current_semantic_labels.append(node.attributes.name)
             
             # Filtering
             if 'o' in node.id.category.lower():
@@ -143,19 +135,16 @@ class SceneGraphSim:
 
             if 'p' in node.id.category.lower():
                 self._visited_node_ids.append(nodeid)
-                self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
+
             if 'f' in node.id.category.lower():
-                self.navmesh_netx_graph.add_nodes_from([(nodeid, attr)])
                 if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
                     # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
                     self._frontier_node_ids.append(nodeid)
+                    # DONT ADD FRONTIER OR PLACE NODES
+                    continue
             
             if 'r' in node.id.category.lower():
                 self._room_ids.append(nodeid)
-            
-            # DONT ADD FRONTIER OR PLACE NODES
-            if 'f' in node.id.category.lower() or 'p' in node.id.category.lower():
-                continue
             
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
@@ -193,13 +182,14 @@ class SceneGraphSim:
             # Filtering scene graph
             if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
                 continue
-            if 'object' in source_type and 'object' in target_type:
+            
+            # if 'object' in source_type and 'object' in target_type: # Object->Object
+            #     continue
+            if 'visited' in source_type and 'visited' in target_type: # Place->Place
                 continue
-            if 'visited' in source_type and 'visited' in target_type:
+            if 'frontier' in source_type or 'frontier' in target_type: # ALL FRONTIERS for now, we add frontiers later
                 continue
-            if 'frontier' in source_type and 'frontier' in target_type:
-                continue
-            if 'frontier' in source_type or 'frontier' in target_type:
+            if 'agent' in source_type or 'agent' in target_type: # agent->agent
                 continue
 
             self.filtered_netx_graph.add_edges_from([(
@@ -246,8 +236,9 @@ class SceneGraphSim:
     def _enrich_sg(self):
         if self._enrich_room:
             for room_id in self._room_ids:
-                object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for place_id in self.filtered_netx_graph.successors(room_id) for object_id in self.filtered_netx_graph.successors(place_id)])
-                object_names = (', '.join(object_names)).replace('agent, ', '')
+                place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id] # ignore room->room
+                object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
+                object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for object_id in object_ids])
                 
                 start = time.time()
                 completion = client.beta.chat.completions.parse(
@@ -385,7 +376,7 @@ class SceneGraphSim:
         """
             GRAPH.EDGES:
             Building->Room
-            Room->Place
+            Room->Place, Room->Room
             Place->Object
             Place->Frontier, Place->Place
         """
