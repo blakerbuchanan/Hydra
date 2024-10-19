@@ -65,6 +65,7 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         answer: Answer
         confidence: Confidence
         image_description: str
+        scene_graph_description: str
     
     return PlannerResponse
 
@@ -209,55 +210,25 @@ class VLMPLannerEQA:
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
         return Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options
     
-    # @property
-    # def agent_role_prompt(self):
-    #     prompt = "You are an excellent graph planning agent. \
-    #         You are given a scene graph representation (in json format) of the areas of the environment you have explored so far. \
-    #         Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
-    #         Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-    #         Frontier nodes and visited nodes are empty spaces in the scene where the agent can navigate to.\
-    #         Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas.\
-    #         Edges among frontier nodes and visited nodes tell which empty spaces are connected to each other, hence can be reached from one another.\
-    #         You are tasked with 'exploring' a previously unseen enviornment to Answer a multiple-choice question about the environment. Keep exploring until you can confidently answer the question. \
-    #         You are also required to report whether using the scene graph and your current state, you are able to answer the question with high Confidence.\
-    #         Finally, You can take three kinds of steps in the environment: Goto_visited_node_step, Goto_frontier_node_step and Done_step \n \
-    #         1) Goto_visited_node_step: Navigate to a visited node. Scene graph may or may not be augmented depending upon how well the region was explored when visited before \n \
-    #         2) Goto_frontier_node_step: Navigate to a frontier (unexplored) node. Going to frontier node will proide the agent with new observations and the scene graph will be augmented. \n \
-    #         3) Done_step: Check the current state and scene graph carefully. If the question can be answered with high confidence, then only take the done action else take one of the other actions. \n "
-    #     return prompt
-    
-    
-    # @property
-    # def agent_role_prompt(self):
-    #     prompt = "You are an excellent graph planning agent. Your goal is to explore an environment to multiple-choice question about the environment.\
-    #         As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
-    #         Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'visited' nodes, 'frontier' nodes and 'objects' in the scene.\
-    #         Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-    #         Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore. You can also directly choose object nodes for exploration.\
-    #         You are required to report an answer to the question, even if Confidence is low. This answer should include the letter associated with the choices available.\
-    #         You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with high Confidence.\
-    #         You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
-    #         You will also be provided with a list of semantic labels (SEMANTIC_LABEL). These semantic labels will be names of objects, rooms, and buildings, and can guide exploration to answer the question. \
-    #         If any of the semantic labels might be of objects or rooms of interest, set use_image to True so you can use an image to better answer the question. \
-    #         To explore the environment choose between two actions: Goto_frontier_node_step and Goto_object_node_step. If the question involves finding an object, you should prioritize Goto_object_node_step. \n \
-    #         Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide the agent with new observations and the scene graph will be augmented. \n \
-    #         Goto_object_node_step: Navigates to a certain seen object. This can help facilitate going back to a previously explored area to answer the question related to an object in the question."
-    #     return prompt
-    
     @property
     def agent_role_prompt(self):
-        prompt = "You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
-            As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
-            Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'frontier' nodes and 'objects' in the scene.\
-            Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
-            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
-            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with very high Confidence. If are uncertain of the answer, and you think that exploring the scene more or going nearer to relevant objects will give you more information to better answer the question, you should do that and anwer 'no'. \n  \
-            You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
+        scene_graph_desc = "A scene graph represents an indoor environment in a hierarchical tree structure consisting of nodes and edges/links. There are six types of nodes: building, rooms, visited areas, frontiers, objects, and agent in the environemnt. \n \
+            The tree structure is as follows: At the highest level 5 is a 'building' node. \n \
+            At level 4 are room nodes. There are links connecting the building node to each room node. \n \
+            At the lower level 3, are visited and frontier nodes. 'visited' node represent area of a room that is already explored. Frontier nodes represent areas that are at the boundary of visited and unexplored areas. There are links from room nodes to corresponding visited and frontier nodes depicted which room they are located in. \n \
+            At the lowest level 2 are object nodes and agent nodes. There is an edge from visited node to each object node depicting which visited area of which room the object is located in. \
+            There are also links between frontier nodes and objects nodes, depicting the objects in the vicinity of a frontier node. \n \
+            Finally the agent node is where you are located in the environment. There is an edge between a visited node and the agent node, depicting which visited area of which room the agent is located in."
+        current_state_des = "'CURRENT STATE' will give you the exact location of the agent in the scene graph by giving you the agent node id, location, room_id and room name. Additionally, you will also be given the current view of the agent as an image. "
+        
+        
+        prompt = f"You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
+            As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  {scene_graph_desc}. {current_state_des}\
+            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with very high Confidence. If are uncertain of the answer, and you think that exploring the scene more or going nearer to relevant objects will give you more information to better answer the question, you should do that and anwer 'no'. If you are confident about answering the question, answer 'yes'. \n  \
+            You are also required to provide a brief description of the current image 'image_description' and of the scene graph 'scene_graph_description' and explain how the image and scene graph are helpful in answering the question and for choosing future actions. \n \
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
-            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. Use this to explore unseen areas to discover new areas/rooms/objects. Provide explanation for why you are choosing a specific frontier (e.g. relevant objects near it)\n \
-            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. \
-            This action will not provide much new information in the scene graph but will take you nearer to a seen location if you want to reexamine it. \n \
-            In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not."
+            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
+            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. "
         
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
@@ -327,7 +298,7 @@ class VLMPLannerEQA:
         else:
             img_desc = ' '
         
-        return step, plan.parsed.confidence, plan.parsed.answer, img_desc
+        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
     
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
@@ -397,11 +368,11 @@ class VLMPLannerEQA:
         # self.sg_sim.update()
         
         agent_state = self.sg_sim.get_current_semantic_state_str()
-
         current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
 
+        sg_desc=''
         if self._vlm_type == 'gpt':
-            step, confidence, answer, img_desc = self.get_gpt_output(current_state_prompt)
+            step, confidence, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
 
         if self._vlm_type == 'gemini':
             step, confidence, answer, img_desc = self.get_gemini_output(current_state_prompt)
@@ -430,7 +401,8 @@ class VLMPLannerEQA:
                                         LLM output: {step}. \n \
                                         Confidence: {confidence} \n \
                                         Answer: {answer} \n \
-                                        Image desc: {img_desc} \n \n')
+                                        Image desc: {img_desc} \n \
+                                        Scene graph desc: {sg_desc} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
@@ -440,4 +412,3 @@ class VLMPLannerEQA:
             return target_pose, self.done, confidence.answer.value, answer.answer.name
         if self._vlm_type == 'gemini':
             return target_pose, self.done, confidence["answer"], answer
-        

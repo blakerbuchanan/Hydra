@@ -52,7 +52,7 @@ def main(cfg):
     successes = 0
     test_len = 40
     for question_ind in tqdm(range(min(test_len, len(questions_data)))):
-        if question_ind in np.arange(1):
+        if question_ind in np.arange(3):
             continue
 
         question_data = questions_data[question_ind]
@@ -190,16 +190,14 @@ def main(cfg):
         pipeline.save()
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("[ERROR]: Configuration path not provided. Please provide a path to configuration file for the VLM planner.")
-        sys.exit(1)  # Exit the script with an error code
+    import argparse
 
-    config_path = sys.argv[1]
-    try:
-        cfg = OmegaConf.load(config_path)
-    except Exception as e:
-        print(f"Error loading configuration file: {e}")
-        sys.exit(1)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-cf", "--cfg_file", help="cfg file name", default="", type=str, required=True)
+    args = parser.parse_args()
+
+    config_path = Path(__file__).resolve().parent / 'commands' / 'cfg' / f'{args.cfg_file}.yaml'
+    cfg = OmegaConf.load(config_path)
 
     OmegaConf.resolve(cfg)
     main(cfg)
