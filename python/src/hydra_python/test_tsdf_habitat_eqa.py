@@ -14,6 +14,7 @@ from hydra_python.frontier_mapping_eqa.geom import *
 
 from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
+import sys
 
 def main(cfg):
     questions_data, init_pose_data = load_eqa_data(cfg.data)
@@ -43,6 +44,7 @@ def main(cfg):
             z_offset=cfg.habitat.z_offset,
             camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
             get_clip_embeddings=cfg.habitat.get_clip_embeddings,
+            get_siglip_embeddings=cfg.habitat.get_siglip_embeddings,
             img_subsample_freq=cfg.habitat.img_subsample_freq)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
@@ -137,6 +139,14 @@ def main(cfg):
         pipeline.save()
 
 if __name__ == "__main__":
-    cfg = OmegaConf.load('/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa.yaml')
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-cf", "--cfg_file", help="cfg file name", default="", type=str, required=True)
+    args = parser.parse_args()
+
+    config_path = Path(__file__).resolve().parent / 'commands' / 'cfg' / f'{args.cfg_file}.yaml'
+    cfg = OmegaConf.load(config_path)
+
     OmegaConf.resolve(cfg)
     main(cfg)

@@ -147,7 +147,8 @@ def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_ac
 
     steps = genai.protos.Schema(
             type = genai.protos.Type.ARRAY,
-            items = step
+            items = step,
+            min_items = 1
         )
 
     response_schema = genai.protos.Schema(
@@ -232,13 +233,30 @@ class VLMPLannerEQA:
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
             Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. "
+
+        return prompt
+    
+    @property
+    def agent_role_prompt_gemini(self):
+        prompt = "You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
+            As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  \
+            Nodes in the scene graph will give you information about the 'buildings', 'rooms', 'frontier' nodes and 'objects' in the scene.\
+            Edges in the scene graph tell you about connected components in the scenes: For example, Edge from a room node to object node will tell you which objects are in which room.\
+            Frontier nodes represent areas that are at the boundary of visited and unexplored empty areas. Edges from frontiers to objects denote which objects are close to that frontier node. Use this information to choose the next frontier to explore.\
+            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with very high Confidence. If you think that exploring the scene more or going nearer to relevant objects will give you more information to better answer the question, you should do that and anwer 'no'. \n  \
+            You are also required to provide a brief description of the current image 'image_description' you are given and explain if that image has any useful features that can help answer the question. \n \
+            You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
+            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. Use this to explore unseen areas to discover new areas/rooms/objects. Provide explanation for why you are choosing a specific frontier (e.g. relevant objects near it)\n \
+            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. \
+            This action will not provide much new information in the scene graph but will take you nearer to a seen location if you want to reexamine it. \n \
+            In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not."
         
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
                 'value' should never be empty and should always look like frontier_<FRONTIER_NUMBER> or object_<OBJECT_NUMBER>, where <FRONTIER_NUMBER> and <OBJECT_NUMBER> represent the number assigned to the respective frontier or object in the scene graph. \
                 Furthermore, the 'steps' field should never be empty and should always contain one or more entries."
         return prompt
-    
+
     def get_current_state_prompt(self, scene_graph, agent_state):
         # TODO(saumya): Include history
         prompt = f"At t = {self.t}: \n \
@@ -306,7 +324,7 @@ class VLMPLannerEQA:
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
         messages=[
-            {"role": "model", "parts": [{"text": f"AGENT ROLE: {self.agent_role_prompt}"}]},
+            {"role": "model", "parts": [{"text": f"AGENT ROLE: {self.agent_role_prompt_gemini}"}]},
             {"role": "model", "parts": [{"text": f"QUESTION: {self._question}"}]},
             {"role": "user", "parts": [{"text": f"CURRENT STATE: {current_state_prompt}."}]},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
@@ -387,7 +405,7 @@ class VLMPLannerEQA:
                 target_pose = None
             else:
                 if step['type'] == 'Goto_object_node_step':
-                    target_pose = self.sg_sim.get_position_from_id(step["action"]["value"])
+                    target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
                 else:
                     target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
         if self._vlm_type == 'gpt':

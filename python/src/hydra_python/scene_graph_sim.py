@@ -409,7 +409,6 @@ class SceneGraphSim:
     def get_current_semantic_state_str(self):
         agent_pos = self.filtered_netx_graph.nodes[self.curr_agent_id]['position']
         agent_loc_str = f'The agent is currently at node {self.curr_agent_id} at position {agent_pos}'
-
         agent_place_ids = [place_id for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id)]
         room_id = [room_id for room_id in self.filtered_netx_graph.predecessors(agent_place_ids[0])]
         

@@ -15,6 +15,7 @@ import yaml
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
 from transformers import CLIPProcessor, CLIPModel
+from transformers import AutoProcessor, AutoModel
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -255,6 +256,7 @@ class HabitatInterface:
             z_offset=0.5,
             camera_tilt=0,
             get_clip_embeddings=False,
+            get_siglip_embeddings=False,
             img_subsample_freq=1):
         
         """Initialize the simulator."""
@@ -265,6 +267,7 @@ class HabitatInterface:
         self._camera_tilt = camera_tilt
         self.question = ' '
         self._get_clip_embeddings = get_clip_embeddings
+        self._get_siglip_embeddings = get_siglip_embeddings
         self._img_subsample_freq = img_subsample_freq
 
         # TODO(nathan) expose some of this via the data interface
@@ -297,15 +300,29 @@ class HabitatInterface:
             self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
             self.question_embed = self.processor(text=[self.question], return_tensors="pt", padding=True)
 
+        if get_siglip_embeddings:
+            self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224")
+            self.processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
+            self.question_embed = self.processor(text=[self.question], padding="max_length", return_tensors="pt")
+
         self._make_navgraph(inflation_radius=inflation_radius)
 
     def update_question(self, question):
         self.question = question
         if self._get_clip_embeddings:
             self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True)
+        if self._get_siglip_embeddings:
+            self.question_embed = self.processor(text=[question], return_tensors="pt", padding="max_length")
     
+    def calc_logit_for_img(self, img):
+        imgs_embed = self.processor(images=img, return_tensors="pt", padding=True)
+        outputs = self.model(**self.question_embed, **imgs_embed)
+        logits_per_text = outputs.logits_per_image # this is the image-text similarity score
+        return logits_per_text.squeeze().detach().numpy()
+
     def calc_similarity_score(self, images):
-        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=True)
+        padding = True if self._get_clip_embeddings else "max_length" # HuggingFace says SigLIP was trained on "max_length"
+        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=padding)
         outputs = self.model(**self.question_embed, **imgs_embed)
         logits_per_text = outputs.logits_per_image # this is the image-text similarity score
         probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities

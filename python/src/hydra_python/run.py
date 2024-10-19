@@ -9,6 +9,7 @@ from voxel_mapping import Observations
 import threading, time
 from PIL import Image
 from scipy.special import softmax
+import threading
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -214,6 +215,14 @@ def run(
 
     #rr.shutdown()
 
+def get_logit_from_clip(habitat_data, clip_logits, img):
+
+    start = time.time()
+    logits_per_text = habitat_data.calc_logit_for_img(img)
+    clip_logits.append(logits_per_text.item())
+    import ipdb; ipdb.set_trace()
+    print(f"===========time taken for CLIP emb for single image: {time.time()-start}")
+
 def run_eqa(
     pipeline,
     habitat_data,
@@ -231,6 +240,8 @@ def run_eqa(
     agent_positions, agent_quats_wxyz = [], []
     imgs_rgb= []
     step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
+    clip_logits = []
+
     for pose in pose_source:
         pipeline.graph.save(output_path / "dsg.json", False)
         pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
@@ -239,6 +250,10 @@ def run_eqa(
         _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
         imgs_rgb.append(habitat_data.rgb)
         step_time += time.time()-start
+
+        # Create and start the thread on which to run CLIP
+        # clip_thread = threading.Thread(target=get_logit_from_clip, args=(habitat_data, clip_logits, habitat_data.rgb))
+        # clip_thread.start()
 
         agent_pos, agent_quat_wxyz = habitat_data.get_state(is_eqa=True)
         agent_positions.append(agent_pos)
@@ -297,6 +312,8 @@ def run_eqa(
                 # rr_logger.log_voxel_map(voxel_space)
             rr_logger.step()
 
+        # clip_thread.join()
+
         if step_callback:
             step_callback(pipeline, None)
     
@@ -316,13 +333,12 @@ def run_eqa(
         curr_img = Image.fromarray(habitat_data.rgb)
         curr_img.save(output_path / "current_img.png")
     
-    if habitat_data._get_clip_embeddings:
 
+    if habitat_data._get_siglip_embeddings or habitat_data.get_clip_embeddings:
         start = time.time()
         probs, logits = habitat_data.calc_similarity_score(imgs_rgb)
-        best = np.argmax(probs)
         imgs = np.array(imgs_rgb[::habitat_data._img_subsample_freq])
-
+    
         # Remove black images
         w, h = imgs[0].shape[0], imgs[0].shape[1]
         black_pixels_mask = np.all(imgs == 0, axis=-1)
@@ -343,8 +359,9 @@ def run_eqa(
         #     labeled_frames.append(color_img)
 
         # imageio.mimsave(output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
+        # import ipdb; ipdb.set_trace()
 
         if save_image:
             curr_img = Image.fromarray(useful_imgs[best])
             curr_img.save(output_path / "current_img.png")
-        print(f"===========time taken for CLIP emb: {time.time()-start}")
+        print(f"===========time taken for SigLIP emb: {time.time()-start}")

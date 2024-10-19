@@ -51,8 +51,10 @@ def main(cfg):
 
     successes = 0
     test_len = 40
-    for question_ind in tqdm(range(min(test_len, len(questions_data)))):
-        if question_ind in np.arange(3):
+    # for question_ind in tqdm(range(min(test_len, len(questions_data)))):
+    # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
+    for question_ind in tqdm(range(len(questions_data))):
+        if question_ind in [0, 77, 78, 81, 89]:
             continue
 
         question_data = questions_data[question_ind]
@@ -80,6 +82,7 @@ def main(cfg):
             z_offset=cfg.habitat.z_offset,
             camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
             get_clip_embeddings=cfg.habitat.get_clip_embeddings,
+            get_siglip_embeddings=cfg.habitat.get_siglip_embeddings,
             img_subsample_freq=cfg.habitat.img_subsample_freq)
             
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
