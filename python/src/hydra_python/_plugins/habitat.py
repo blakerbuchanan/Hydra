@@ -16,6 +16,12 @@ from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
 from transformers import CLIPProcessor, CLIPModel
 from transformers import AutoProcessor, AutoModel
+import torch
+
+# Check if CUDA is available and set the device accordingly
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+torch.cuda.empty_cache()
+torch.cuda.set_device(1)
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -296,37 +302,32 @@ class HabitatInterface:
         self._labels = None
 
         if get_clip_embeddings:
-            self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+            self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
             self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-            self.question_embed = self.processor(text=[self.question], return_tensors="pt", padding=True)
+            self.question_embed = self.processor(text=[self.question], return_tensors="pt", padding=True).to(device)
 
         if get_siglip_embeddings:
-            self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224")
+            self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
             self.processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
-            self.question_embed = self.processor(text=[self.question], padding="max_length", return_tensors="pt")
+            self.question_embed = self.processor(text=[self.question], padding="max_length", return_tensors="pt").to(device)
 
         self._make_navgraph(inflation_radius=inflation_radius)
 
     def update_question(self, question):
         self.question = question
         if self._get_clip_embeddings:
-            self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True)
+            self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True).to(device)
         if self._get_siglip_embeddings:
-            self.question_embed = self.processor(text=[question], return_tensors="pt", padding="max_length")
-    
-    def calc_logit_for_img(self, img):
-        imgs_embed = self.processor(images=img, return_tensors="pt", padding=True)
-        outputs = self.model(**self.question_embed, **imgs_embed)
-        logits_per_text = outputs.logits_per_image # this is the image-text similarity score
-        return logits_per_text.squeeze().detach().numpy()
+            self.question_embed = self.processor(text=[question], return_tensors="pt", padding="max_length").to(device)
 
     def calc_similarity_score(self, images):
         padding = True if self._get_clip_embeddings else "max_length" # HuggingFace says SigLIP was trained on "max_length"
-        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=padding)
-        outputs = self.model(**self.question_embed, **imgs_embed)
+        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=padding).to(device)
+        with torch.no_grad():
+            outputs = self.model(**self.question_embed, **imgs_embed)
         logits_per_text = outputs.logits_per_image # this is the image-text similarity score
         probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities
-        return probs.detach().numpy(), logits_per_text.squeeze().detach().numpy()
+        return probs.detach().cpu().numpy(), logits_per_text.squeeze().detach().cpu().numpy()
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {

@@ -234,6 +234,10 @@ class VLMPLannerEQA:
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
             Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. "
 
+        if self._vlm_type == 'gemini':
+            prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
+                'value' should never be empty and should always look like frontier_<FRONTIER_NUMBER> or object_<OBJECT_NUMBER>, where <FRONTIER_NUMBER> and <OBJECT_NUMBER> represent the number assigned to the respective frontier or object in the scene graph. \
+                Furthermore, the 'steps' field should never be empty and should always contain one or more entries."
         return prompt
     
     @property
@@ -249,7 +253,8 @@ class VLMPLannerEQA:
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. Use this to explore unseen areas to discover new areas/rooms/objects. Provide explanation for why you are choosing a specific frontier (e.g. relevant objects near it)\n \
             Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. \
             This action will not provide much new information in the scene graph but will take you nearer to a seen location if you want to reexamine it. \n \
-            In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not."
+            In summary, Use Goto_frontier_node_step to explore new areas, use Goto_object_node_step to revisit explored areas to get a better view, answer the question and mention if you are confident or not. \n \
+            Also, you should be very careful to not answer the question too early and overconfidently. You are required to explore your environment sufficiently before answering the question."
         
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \

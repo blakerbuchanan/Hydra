@@ -1,6 +1,6 @@
 # General
 seed: 42
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_siglip_test
+exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_siglip_new_sg_prompt
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 

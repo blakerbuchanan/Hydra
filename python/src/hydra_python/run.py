@@ -215,13 +215,6 @@ def run(
 
     #rr.shutdown()
 
-def get_logit_from_clip(habitat_data, clip_logits, img):
-
-    start = time.time()
-    logits_per_text = habitat_data.calc_logit_for_img(img)
-    clip_logits.append(logits_per_text.item())
-    import ipdb; ipdb.set_trace()
-    print(f"===========time taken for CLIP emb for single image: {time.time()-start}")
 
 def run_eqa(
     pipeline,
@@ -250,10 +243,6 @@ def run_eqa(
         _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
         imgs_rgb.append(habitat_data.rgb)
         step_time += time.time()-start
-
-        # Create and start the thread on which to run CLIP
-        # clip_thread = threading.Thread(target=get_logit_from_clip, args=(habitat_data, clip_logits, habitat_data.rgb))
-        # clip_thread.start()
 
         agent_pos, agent_quat_wxyz = habitat_data.get_state(is_eqa=True)
         agent_positions.append(agent_pos)
@@ -311,8 +300,6 @@ def run_eqa(
             #     rr_logger.log_clear("world/voxel")
                 # rr_logger.log_voxel_map(voxel_space)
             rr_logger.step()
-
-        # clip_thread.join()
 
         if step_callback:
             step_callback(pipeline, None)
