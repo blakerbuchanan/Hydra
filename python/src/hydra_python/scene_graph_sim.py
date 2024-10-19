@@ -239,7 +239,7 @@ class SceneGraphSim:
                     ],
                     response_format=Room_response,
                 )
-                print(f" ======== time for room enrichment: {time.time()-start}")
+                print(f" ======== time for room {room_id} enrichment: {time.time()-start}")
                 self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
 
     def _get_node_properties(self, node):
@@ -273,6 +273,10 @@ class SceneGraphSim:
     def test_sg(self):
         # ***********TEST NODES***********
         ## ***Process pipeline.graph***
+
+        """
+        Layer 5: Building, Layer 4: Room, Layer 3: Places and frontiers, Layer 2: Objects and agents.
+        """
         place_node_positions = []
         active_frontier_place_node_positions = []
         object_node_positions = []
@@ -405,8 +409,15 @@ class SceneGraphSim:
     def get_current_semantic_state_str(self):
         agent_pos = self.filtered_netx_graph.nodes[self.curr_agent_id]['position']
         agent_loc_str = f'The agent is currently at node {self.curr_agent_id} at position {agent_pos}'
-        room_name = [self.filtered_netx_graph.nodes[room_id]['name'] for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id) for room_id in self.filtered_netx_graph.predecessors(place_id)]
-        room_str = '' if  room_name == 'room' else f' in room {room_name[0]}'
+
+        agent_place_ids = [place_id for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id)]
+        room_id = [room_id for room_id in self.filtered_netx_graph.predecessors(agent_place_ids[0])]
+        
+        room_str = ''
+        if len(room_id) > 0:
+            room_name = self.filtered_netx_graph.nodes[room_id[0]]['name']
+            if (room_name != 'room'):
+                room_str = f' at room node: {room_id[0]} with name {room_name}'
         return f'{agent_loc_str} {room_str}'
     
     def update(self, frontier_nodes=None):

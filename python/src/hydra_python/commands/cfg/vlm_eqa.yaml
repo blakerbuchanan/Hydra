@@ -1,7 +1,7 @@
 # General
 seed: 42
 # exp_name: explore_eqa_random_test_enrich
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip_room
+exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip_room_graph
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 
@@ -30,8 +30,8 @@ habitat:
   scene_type: 'hm3d'
   img_width: 640
   img_height: 480
-  camera_height: 0.8
-  camera_tilt_deg: -15
+  camera_height: 1.5
+  camera_tilt_deg: -30
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
