@@ -6,22 +6,12 @@ import hydra_python as hydra
 import base64
 
 from openai import OpenAI
-import google.generativeai as genai
+# import google.generativeai as genai
 import os
 import mimetypes
 import ast
 
-# client = OpenAI(
-#     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
-#     project='proj_rZU06lthKefMBx9rE3YGD2Um',
-# )
-client = OpenAI()
-
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-
-# Choose a Gemini model.
-gemini_model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
-
+from typing import Annotated
 from pydantic import BaseModel
 
 def encode_image(image_path):
@@ -29,13 +19,6 @@ def encode_image(image_path):
     return base64.b64encode(image_file.read()).decode('utf-8')
 
 def create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
-    class Done_action(str, Enum):
-        Done = "done_with_task"
-    
-    class Confidence_check(str, Enum):
-        Confident_in_correctly_answering_question = "yes"
-        Not_confident_in_correctly_answering_question = "no"
-
     class Goto_visited_node_step(BaseModel):
         explanation_visited: str
         action: Goto_visited_node_action
@@ -48,25 +31,18 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         explanation_obj: str
         action: Goto_object_node_action
 
-    class Done_step(BaseModel):
-        explanation_done: str
-        action: Done_action
-    
     class Answer(BaseModel):
-        explanation_ans: str
-        answer: Answer_options
-
-    class Confidence(BaseModel):
-        explanation_conf: str
-        answer: Confidence_check
-
+        explanation_ans: Annotated[str, "Explain the reasoning for selecting the answer."]
+        answer: Annotated[Answer_options, "Select the correct answer from the options."]
+        confidence_level: Annotated[float, "Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain."]
+        is_confident: Annotated[bool, "Answer TRUE, if you are very confident about answering the question correctly. Answer 'no', if you are uncertain of the answer or you think that exploring the scene more or going nearer to relevant objects will help you better answer the question."]
+        
     class PlannerResponse(BaseModel):
         steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
         answer: Answer
-        confidence: Confidence
-        image_description: str
-        scene_graph_description: str
-    
+        image_description: Annotated[str, "Describe the CURRENT IMAGE. Pay special attention to features that can help answer the question or select future actions."]
+        scene_graph_description: Annotated[str, "Describe the SCENE GRAPH. Pay special attention to features that can help answer the question or select future actions."]
+        summary: Annotated[str, "Provide a concise summary of 1. the current image and scene graph, 2. the selected action and the reasoning behind it, 3. the answer to the question and the level of confidence in the answer, 4. recommendations for what to do next."]
     return PlannerResponse
 
 def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
@@ -171,6 +147,14 @@ class VLMPLannerEQA:
         self._answer = question_data["answer"]
         self._output_path = output_path
         self._vlm_type = cfg.name
+        if self._vlm_type == 'gpt':
+            client = OpenAI()
+        elif self._vlm_type == 'gemini':
+            genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+            gemini_model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
+        else:
+            raise ValueError(f"VLM type {self._vlm_type} not supported. Please choose between 'gpt' and 'gemini'.")
+
         self._use_image = cfg.use_image
 
         self._example_plan = '' #TODO(saumya)
@@ -270,13 +254,19 @@ class VLMPLannerEQA:
         return prompt
 
     def get_gpt_output(self, current_state_prompt):
-        
+    
         messages=[
             {"role": "system", "content": f"AGENT ROLE: {self.agent_role_prompt}"},
             {"role": "system", "content": f"QUESTION: {self._question}"},
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
+
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
+        if len(self._history)>0:
+            history = ""
+            for idx, h in enumerate(self._history):
+                history += f"Step {idx}: {h} \n"
+            messages.append({"role": "user", "content": f"PAST STEPS: {history}"})
 
         if self._use_image:
             base64_image = encode_image(self._output_path / "current_img.png")
@@ -324,7 +314,9 @@ class VLMPLannerEQA:
         else:
             img_desc = ' '
         
-        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
+        summary = plan.parsed.summary
+        self._history.append(summary)
+        return step, plan.parsed.answer.is_confident, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
     
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
