@@ -341,7 +341,7 @@ class VLMPLannerEQA:
 
         summary = plan.parsed.summary
         self._history.append(summary)
-        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
+        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description, summary
     
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
@@ -412,7 +412,7 @@ class VLMPLannerEQA:
 
         summary = response_dict['summary']
         self._history.append(summary)
-        return step, confidence, answer, img_desc
+        return step, confidence, answer, img_desc, summary
     
 
     def get_next_action(self):
@@ -423,10 +423,10 @@ class VLMPLannerEQA:
 
         sg_desc=''
         if self._vlm_type == 'gpt':
-            step, confidence, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
+            step, confidence, answer, img_desc, sg_desc, summary = self.get_gpt_output(current_state_prompt)
 
         if self._vlm_type == 'gemini':
-            step, confidence, answer, img_desc = self.get_gemini_output(current_state_prompt)
+            step, confidence, answer, img_desc, summary = self.get_gemini_output(current_state_prompt)
 
 
         print(f'At t={self._t}: \n {step}')
@@ -453,7 +453,8 @@ class VLMPLannerEQA:
                                         Confidence: {confidence} \n \
                                         Answer: {answer} \n \
                                         Image desc: {img_desc} \n \
-                                        Scene graph desc: {sg_desc} \n \n')
+                                        Scene graph desc: {sg_desc} \n \
+                                        Summary: {summary} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
