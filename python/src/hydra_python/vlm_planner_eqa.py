@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import List, Tuple, Literal, Any, Union, Optional
+from typing import List, Tuple, Literal, Any, Union, Optional, Annotated
 import time
 import hydra_python as hydra
 import base64
@@ -66,7 +66,9 @@ def create_planner_response(Goto_visited_node_action, Goto_object_node_action, G
         confidence: Confidence
         image_description: str
         scene_graph_description: str
-    
+        ##TODO: Annotated doesn't work here...
+        summary: Annotated[str, "Provide a concise summary of 1. the current image and scene graph, 2. the selected action and the reasoning behind it, 3. the answer to the question and the level of confidence in the answer, 4. recommendations for what to do next."]
+   
     return PlannerResponse
 
 def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
@@ -145,6 +147,11 @@ def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_ac
                     type = genai.protos.Type.STRING
                 )
 
+    summary = genai.protos.Schema(
+        type = genai.protos.Type.STRING, 
+        description = "Provide a concise summary of a. the current image and scene graph, b. the selected action and the reasoning behind it, c. the answer to the question and the level of confidence in the answer, d. recommendations for what to do next."
+    )
+
     steps = genai.protos.Schema(
             type = genai.protos.Type.ARRAY,
             items = step,
@@ -157,9 +164,10 @@ def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_ac
             'steps': steps,
             'answer': answer,
             'confidence': confidence,
-            'img_desc': image_desc
+            'img_desc': image_desc, 
+            'summary': summary
         },
-        required=['steps', 'answer', 'confidence', 'img_desc']
+        required=['steps', 'answer', 'confidence', 'img_desc', 'summary']
     )
 
     return response_schema
@@ -175,7 +183,7 @@ class VLMPLannerEQA:
 
         self._example_plan = '' #TODO(saumya)
         self._done = False
-        self._history = ''
+        self._history = []
         self._t = 0
 
         self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
@@ -218,8 +226,9 @@ class VLMPLannerEQA:
             You are also required to provide a brief description of the current image 'image_description' and of the scene graph 'scene_graph_description' and explain how the image and scene graph are helpful in answering the question and for choosing future actions. \n \
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
-            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. "
-
+            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. \n \
+            You are also required to provide a concise summary 'summary', which summarizes a. the current state as you observe through the current image and scene graph, b. the selected action and the reasoning behind it, c. the answer to the question and the level of confidence in the answer, d. recommendations for what to do next."
+            
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
                 'value' should never be empty and should always look like frontier_<FRONTIER_NUMBER> or object_<OBJECT_NUMBER>, where <FRONTIER_NUMBER> and <OBJECT_NUMBER> represent the number assigned to the respective frontier or object in the scene graph. \
@@ -263,6 +272,12 @@ class VLMPLannerEQA:
             {"role": "user", "content": f"CURRENT STATE: {current_state_prompt}."},
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
+        if len(self._history)>0:
+            history = []
+            for idx, h in enumerate(self._history):
+                history.append(f"Step {idx+1}. {h})")
+            history = "\n".join(history)
+            messages.append({"role": "user", "content": f"PAST STEPS: {history}"})
 
         if self._use_image:
             base64_image = encode_image(self._output_path / "current_img.png")
@@ -309,8 +324,10 @@ class VLMPLannerEQA:
             img_desc = plan.parsed.image_description
         else:
             img_desc = ' '
-        
-        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
+
+        summary = plan.parsed.summary
+        self._history.append(summary)
+        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description, summary
     
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
@@ -343,6 +360,13 @@ class VLMPLannerEQA:
                     ]
                 }
             )
+        
+        if len(self._history)>0:
+            history = []
+            for idx, h in enumerate(self._history):
+                history.append(f"Step {idx+1}. {h})")
+            history = "\n".join(history)
+            messages.append({"role": "user", "parts": [{"text": f"PAST STEPS {history}."}]})
 
         succ=False
         while not succ:
@@ -372,7 +396,9 @@ class VLMPLannerEQA:
         else:
             img_desc = ' '
 
-        return step, confidence, answer, img_desc
+        summary = response_dict['summary']
+        self._history.append(summary)
+        return step, confidence, answer, img_desc, summary
     
 
     def get_next_action(self):
@@ -383,10 +409,10 @@ class VLMPLannerEQA:
 
         sg_desc=''
         if self._vlm_type == 'gpt':
-            step, confidence, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
+            step, confidence, answer, img_desc, sg_desc, summary = self.get_gpt_output(current_state_prompt)
 
         if self._vlm_type == 'gemini':
-            step, confidence, answer, img_desc = self.get_gemini_output(current_state_prompt)
+            step, confidence, answer, img_desc, summary = self.get_gemini_output(current_state_prompt)
 
 
         print(f'At t={self._t}: \n {step}')
@@ -413,7 +439,8 @@ class VLMPLannerEQA:
                                         Confidence: {confidence} \n \
                                         Answer: {answer} \n \
                                         Image desc: {img_desc} \n \
-                                        Scene graph desc: {sg_desc} \n \n')
+                                        Scene graph desc: {sg_desc} \n \
+                                        Summary: {summary} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
