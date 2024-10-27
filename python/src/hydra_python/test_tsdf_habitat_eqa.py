@@ -12,9 +12,10 @@ from hydra_python import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
-from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline
+from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_instruction_from_eqa_data
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import sys
+import torch 
 
 def main(cfg):
     questions_data, init_pose_data = load_eqa_data(cfg.data)
@@ -22,33 +23,31 @@ def main(cfg):
     output_path = cfg.output_path
     os.makedirs(cfg.output_path, exist_ok=True)
     output_path = Path(cfg.output_path)
-    # output_path = hydra.resolve_output_path(cfg.output_path)
+
+    device = f"cuda:{cfg.gpu}" if torch.cuda.is_available() else "cpu"
+
+    eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in np.arange(5):
+        if question_ind in np.arange(8):
             continue
         question_data = questions_data[question_ind]
-        print(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}')
+        
 
         # Planner reset with the new quesion
         question_path = hydra.resolve_output_path(output_path / f'{question_ind}_{question_data["scene"]}')
         scene_name = f'{cfg.data.scene_data_path}/{question_data["scene"]}/{question_data["scene"][6:]}.basis.glb'
+        vlm_question, clean_ques_ans, choices, vlm_pred_candidates = get_instruction_from_eqa_data(question_data)
+        
         habitat_data = habitat.HabitatInterface(
             scene_name, 
-            scene_type=cfg.habitat.scene_type, 
-            camera_height=cfg.habitat.camera_height,
-            width=cfg.habitat.img_width, 
-            height=cfg.habitat.img_height,
-            agent_z_offset=cfg.habitat.agent_z_offset,
-            hfov=cfg.habitat.hfov,
-            z_offset=cfg.habitat.z_offset,
-            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
-            get_clip_embeddings=cfg.habitat.get_clip_embeddings,
-            get_siglip_embeddings=cfg.habitat.get_siglip_embeddings,
-            img_subsample_freq=cfg.habitat.img_subsample_freq)
+            cfg=cfg.habitat,
+            device=device,)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
+
+        click.secho(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}',fg="green",)
 
         # Extract initial pose
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
@@ -74,6 +73,15 @@ def main(cfg):
             rr_logger=rr_logger,
         )
 
+        sg_sim = hydra.SceneGraphSim(
+            cfg, 
+            question_path, 
+            pipeline, 
+            rr_logger, 
+            device=device, 
+            clean_ques_ans=clean_ques_ans,
+            enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
+
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
         # Get scene graph for init view
@@ -84,6 +92,8 @@ def main(cfg):
             output_path=question_path,
             rr_logger=rr_logger,
             tsdf_planner=tsdf_planner,
+            sg_sim=sg_sim,
+            save_image=cfg.vlm.use_image,
         )
 
         # LOG NAVMESH
@@ -91,18 +101,16 @@ def main(cfg):
         positions_navmesh = np.array([pos_habitat_to_normal(p) for p in graph_nodes])
         rr_logger.log_navmesh_data(positions_navmesh)
 
-        vlm_planner = hydra.VLMPLannerEQA(
-            cfg.vlm,
-            questions_data[question_ind], 
-            question_path, 
-            pipeline, 
-            rr_logger, 
-            tsdf_planner.frontier_to_sample_normal)
+        # vlm_planner = hydra.VLMPLannerEQA(
+        #     cfg.vlm,
+        #     sg_sim,
+        #     questions_data[question_ind], 
+        #     question_path)
         
-        habitat_data.update_question(vlm_planner.clean_ques_ans)
-        click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
+        
+        click.secho(f"Question:\n{vlm_question} \n Answer: {answer}",fg="green",)
 
-        num_steps = 200
+        num_steps = 20
         for i in range(num_steps):
             current_heading = habitat_data.get_heading_angle()
             desired_path, frontier_normal = tsdf_planner.sample_frontier()
@@ -134,8 +142,10 @@ def main(cfg):
                 output_path=question_path,
                 rr_logger=rr_logger,
                 tsdf_planner=tsdf_planner,
-                vlm_planner=vlm_planner,
+                sg_sim=sg_sim,
+                save_image=cfg.vlm.use_image,
             )
+            # bb = hydra.get_bb_from_sem(habitat_data)
         pipeline.save()
 
 if __name__ == "__main__":

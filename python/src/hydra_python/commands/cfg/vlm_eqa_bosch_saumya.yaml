@@ -35,7 +35,7 @@ habitat:
   hfov: 120
   z_offset: 0
   get_clip_embeddings: False
-  get_siglip_embeddings: True
+  get_siglip_embeddings: False
   img_subsample_freq: 2
 
 

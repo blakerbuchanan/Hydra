@@ -1,26 +1,44 @@
 # General
 seed: 42
-# exp_name: explore_eqa_random_test_enrich
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_all_clip_room_graph
+exp_name: test
+# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_test
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
-
-vlm:
-  name: 'gpt' # 'gemini'
-  use_image: True
-  enrich_sg_cfg:
-    enrich_room: True
+gpu: 0 
+sim_gpu: 0
 
 data:
-  question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'
-  init_pose_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/scene_init_poses.csv'
-  semantic_annot_data_path: '/mnt/hdd1/saumyas/data/semnav/hm3d-train-semantic-annots-v0.2'
+  question_data_path: '/home/saumyas/catkin_ws_semnav/data/explore-eqa_semnav/data/questions.csv'
+  init_pose_data_path: '/home/saumyas/catkin_ws_semnav/data/explore-eqa_semnav/data/scene_init_poses.csv'
+  semantic_annot_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d-train-semantic-annots-v0.2'
   scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
+  eqa_dataset_enrich_labels: '/home/saumyas/Projects/semnav/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
 
 logging:
   output_parent_dir: results
   save_obs: true
   save_freq: 10
+
+detection:
+  GroundedSAM2:
+    sam2_checkpoint: "/home/saumyas/Projects/semnav/Grounded-SAM-2/checkpoints/sam2.1_hiera_large.pt"
+    model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+scene_graph_sim:
+  enrich_rooms: False
+  enrich_objects: True
+  use_clip_for_images: True
+  use_siglip_for_images: True
+  img_subsample_freq: 3
+  detection_model: GroundedSAM2
+  visualize_detections: True
+  return_mask: False
+  visualize_best_image: False
+  min_detection_confidence: 0.75
+
+vlm:
+  name: 'gpt' # 'gemini'
+  use_image: True
 
 planner:
   max_step_room_size_ratio: 3
@@ -28,6 +46,8 @@ planner:
 
 habitat:
   scene_type: 'hm3d'
+  sim_gpu: ${sim_gpu}
+  inflation_radius: 0.25
   img_width: 640
   img_height: 480
   camera_height: 1.5
@@ -35,10 +55,7 @@ habitat:
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
-  get_clip_embeddings: False
-  get_siglip_embeddings: True
-  img_subsample_freq: 3
-
+  
 hydra:
   glog_level: 0
   verbosity: 0

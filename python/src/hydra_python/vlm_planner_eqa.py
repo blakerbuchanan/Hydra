@@ -9,7 +9,7 @@ from openai import OpenAI
 import google.generativeai as genai
 import os
 import mimetypes
-import ast
+from hydra_python.utils import get_instruction_from_eqa_data
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
@@ -165,9 +165,9 @@ def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_ac
     return response_schema
 
 class VLMPLannerEQA:
-    def __init__(self, cfg, question_data, output_path, pipeline, rr_logger, frontier_nodes=None):
+    def __init__(self, cfg, sg_sim, question_data, output_path):
         
-        self._question = self._get_instruction(question_data)
+        self._question, self.clean_ques_ans, self.choices, self.vlm_pred_candidates = get_instruction_from_eqa_data(question_data)
         self._answer = question_data["answer"]
         self._output_path = output_path
         self._vlm_type = cfg.name
@@ -180,21 +180,7 @@ class VLMPLannerEQA:
 
         self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
 
-        self.sg_sim = hydra.SceneGraphSim(output_path, pipeline, rr_logger, frontier_nodes, enrich_sg_cfg=cfg.enrich_sg_cfg)
-
-    def _get_instruction(self, question_data):
-        question = question_data["question"]
-        # self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
-        self.clean_ques_ans = question_data["question"]
-        self.choices = ast.literal_eval(question_data["choices"])
-        # Re-format the question to follow LLaMA style
-        vlm_question = question
-        self.vlm_pred_candidates = ["A", "B", "C", "D"]
-        for token, choice in zip(self.vlm_pred_candidates, self.choices):
-            vlm_question += "\n" + token + "." + " " + choice
-            if ("do not choose" not in choice.lower()) and (choice.lower() not in ['yes', 'no']):
-                self.clean_ques_ans += "  " + token + "." + " " + choice
-        return vlm_question
+        self.sg_sim = sg_sim
 
     @property
     def done(self):
