@@ -1,8 +1,10 @@
 # General
 seed: 42
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_siglip_new_sg_prompt
+exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_test_rosbag_stuff
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
+gpu: 0 
+sim_gpu: 0
 
 vlm:
   name: 'gemini' # 'gemini'
@@ -27,6 +29,7 @@ planner:
 
 habitat:
   scene_type: 'hm3d'
+  sim_gpu: ${sim_gpu}
   img_width: 640
   img_height: 480
   camera_height: 0.8

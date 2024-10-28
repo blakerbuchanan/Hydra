@@ -186,7 +186,7 @@ class RRLogger:
         # rr.log("world/agent", rr.Transform3D(transform=camera_from_world))
         # rr.log("world/agent", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
         rr.log(f"{self.primary_camera_entity}/rgb", rr.Image(data.rgb).compress(jpeg_quality=95))
-        rr.log(f"{self.primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
+        # rr.log(f"{self.primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
 
     def log_2d_frontier_data(self, unoccupied, unexplored, tsdf):
         rr.log(f"{self.primary_camera_entity}/unoccupied", rr.Image(unoccupied).compress(jpeg_quality=95))
