@@ -29,7 +29,7 @@ def main(cfg):
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in np.arange(8):
+        if question_ind in np.arange(2):
             continue
         question_data = questions_data[question_ind]
         

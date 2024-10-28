@@ -14,8 +14,9 @@ from hydra_python import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
-from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline
+from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_instruction_from_eqa_data
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
+import torch
 
 def load_experiment_data(filename='experiment_results.json'):
     if not os.path.exists(filename):
@@ -48,10 +49,11 @@ def main(cfg):
     os.makedirs(cfg.output_path, exist_ok=True)
     output_path = Path(cfg.output_path)
     results_filename = output_path / f'{cfg.results_filename}.json'
+    device = f"cuda:{cfg.gpu}" if torch.cuda.is_available() else "cpu"
+
+    eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     successes = 0
-    test_len = 40
-    # for question_ind in tqdm(range(min(test_len, len(questions_data)))):
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
         if question_ind in [0, 77, 78, 81, 89]:
@@ -71,20 +73,12 @@ def main(cfg):
         # Planner reset with the new quesion
         question_path = hydra.resolve_output_path(output_path / experiment_id)
         scene_name = f'{cfg.data.scene_data_path}/{question_data["scene"]}/{question_data["scene"][6:]}.basis.glb'
+        
+        vlm_question, clean_ques_ans, choices, vlm_pred_candidates = get_instruction_from_eqa_data(question_data)
         habitat_data = habitat.HabitatInterface(
             scene_name, 
-            scene_type=cfg.habitat.scene_type, 
-            camera_height=cfg.habitat.camera_height,
-            width=cfg.habitat.img_width, 
-            height=cfg.habitat.img_height,
-            agent_z_offset=cfg.habitat.agent_z_offset,
-            hfov=cfg.habitat.hfov,
-            z_offset=cfg.habitat.z_offset,
-            camera_tilt=cfg.habitat.camera_tilt_deg*np.pi/180,
-            get_clip_embeddings=cfg.habitat.get_clip_embeddings,
-            get_siglip_embeddings=cfg.habitat.get_siglip_embeddings,
-            img_subsample_freq=cfg.habitat.img_subsample_freq)
-            
+            cfg=cfg.habitat,
+            device=device,)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
         
         rr_logger = RRLogger(question_path)
@@ -109,6 +103,15 @@ def main(cfg):
             rr_logger=rr_logger,
         )
 
+        sg_sim = hydra.SceneGraphSim(
+            cfg, 
+            question_path, 
+            pipeline, 
+            rr_logger, 
+            device=device, 
+            clean_ques_ans=clean_ques_ans,
+            enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
+
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
         # Get scene graph for init view
@@ -119,29 +122,27 @@ def main(cfg):
             output_path=question_path,
             rr_logger=rr_logger,
             tsdf_planner=tsdf_planner,
+            sg_sim=sg_sim,
             save_image=cfg.vlm.use_image,
         )
 
         vlm_planner = hydra.VLMPLannerEQA(
             cfg.vlm,
+            sg_sim,
             questions_data[question_ind], 
-            question_path, 
-            pipeline, 
-            rr_logger, 
-            tsdf_planner.frontier_to_sample_normal,)
+            question_path)
         
-        habitat_data.update_question(vlm_planner.clean_ques_ans)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 20
         succ = False
         for cnt_step in range(num_steps):
             start = time.time()
-            target_pose, done, confidence, answer_output = vlm_planner.get_next_action()
+            target_pose, confidence, answer_output = vlm_planner.get_next_action()
             click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
 
-            if 'yes' in confidence:
+            if confidence:
                 succ = answer == answer_output
                 if succ:
                     successes += 1
@@ -185,7 +186,7 @@ def main(cfg):
                             output_path=question_path,
                             rr_logger=rr_logger,
                             tsdf_planner=tsdf_planner,
-                            vlm_planner=vlm_planner,
+                            sg_sim=sg_sim,
                             save_image=cfg.vlm.use_image,
                         )
         

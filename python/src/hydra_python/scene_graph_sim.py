@@ -83,8 +83,16 @@ class SceneGraphSim:
         return json.dumps(nx.node_link_data(self.filtered_netx_graph))
     
     @property
-    def visited_node_ids(self):
-        return self._visited_node_ids
+    def room_node_ids(self):
+        return self._room_ids
+
+    @property
+    def room_node_names(self):
+        return self._room_names
+
+    @property
+    def region_node_ids(self):
+        return self._region_node_ids
     
     @property
     def frontier_node_ids(self):
@@ -110,7 +118,7 @@ class SceneGraphSim:
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
 
-        self._room_ids, self._visited_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
+        self._room_ids, self._region_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
 
         # Clear all objects from a specific namespace
         self.rr_logger.log_clear("world/hydra_graph")
@@ -169,7 +177,7 @@ class SceneGraphSim:
                 self._object_node_names.append(node_name)
 
             if 'p' in node.id.category.lower():
-                self._visited_node_ids.append(nodeid)
+                self._region_node_ids.append(nodeid)
 
             if 'f' in node.id.category.lower():
                 if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
@@ -211,7 +219,7 @@ class SceneGraphSim:
             
             # if 'object' in source_type and 'object' in target_type: # Object->Object
             #     continue
-            if 'visited' in source_type and 'visited' in target_type: # Place->Place
+            if 'region' in source_type and 'region' in target_type: # Place->Place
                 continue
             if 'frontier' in source_type or 'frontier' in target_type: # ALL FRONTIERS for now, we add frontiers later
                 continue
@@ -260,6 +268,7 @@ class SceneGraphSim:
                 self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
     def add_room_labels_to_sg(self):
+        self._room_names = []
         for room_id in self._room_ids:
             place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id] # ignore room->room
             object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
@@ -275,13 +284,14 @@ class SceneGraphSim:
             )
             print(f" ======== time for room {room_id} enrichment: {time.time()-start}")
             self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
+            self._room_names.append(completion.choices[0].message.parsed.room.value)
 
     def _get_node_properties(self, node):
         # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
         if 'p' in node.id.category.lower():
-            nodeid = f'visited_{node.id.category_id}'
-            node_type = 'visited'
-            node_name = 'visited'
+            nodeid = f'region_{node.id.category_id}'
+            node_type = 'region'
+            node_name = 'region'
         if 'f' in node.id.category.lower(): 
             nodeid = f'frontier_{node.id.category_id}'
             node_type = 'frontier'
