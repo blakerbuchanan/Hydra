@@ -56,8 +56,8 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [0, 77, 78, 81, 89]:
-            continue
+        # if question_ind in [0, 77, 78, 81, 89]:
+        #     continue
 
         question_data = questions_data[question_ind]
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
@@ -147,11 +147,11 @@ def main(cfg):
                 if succ:
                     successes += 1
                     click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
-                    click.secho(f"VLM Planner Answer: {answer_output}, Answer: {answer}",fg="blue",)
+                    click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
                     log_experiment_status
                 else:
                     click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
-                    click.secho(f"VLM Planner Answer: {answer_output}, Answer: {answer}",fg="red",)
+                    click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
                 break
             else:
                 if target_pose is not None:

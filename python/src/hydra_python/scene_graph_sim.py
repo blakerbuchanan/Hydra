@@ -52,22 +52,35 @@ class SceneGraphSim:
 
         self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
 
-        if self.sg_cfg.use_clip_for_images:
+
+        if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel
             self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
             self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            labels = self.enrich_object_labels.replace('.', '')
+            exist = f'There is {labels} in the scene.'
             self.question_embed = self.processor(text=[clean_ques_ans], return_tensors="pt", padding=True).to(device)
+            self.question_embed_labels = self.processor(text=[labels], return_tensors="pt", padding=True).to(device)
+            self.question_embed_exist = self.processor(text=[exist], return_tensors="pt", padding=True).to(device)
+            self.question_embed = self.question_embed_labels.copy() 
+            self.question_embed['input_ids'] = ((self.question_embed_labels['input_ids']+self.question_embed_exist['input_ids'])/2.0).to(self.question_embed_labels['input_ids'].dtype)
 
-        if self.sg_cfg.use_siglip_for_images:
+        if self.sg_cfg.key_frame_selection.use_siglip_for_images:
             from transformers import AutoProcessor, AutoModel
             self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
             self.processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
+            labels = self.enrich_object_labels.replace('.', '')
+            exist = f'There is  {labels} in the scene.'
             self.question_embed = self.processor(text=[clean_ques_ans], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed_labels = self.processor(text=[labels], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed_exist = self.processor(text=[exist], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed = self.question_embed_labels.copy() 
+            self.question_embed['input_ids'] = ((self.question_embed_labels['input_ids']+self.question_embed_exist['input_ids'])/2.0).to(self.question_embed_labels['input_ids'].dtype)
 
         if self.enrich_objects:
             self.task_relevant_objects = []
-            detection_kwargs = cfg['detection'][self.sg_cfg.detection_model]
-            if self.sg_cfg.detection_model == 'GroundedSAM2':
+            detection_kwargs = cfg['detection'][self.sg_cfg.detection.detection_model]
+            if self.sg_cfg.detection.detection_model == 'GroundedSAM2':
                 from hydra_python.detection.grounded_sam2 import GroundedSAM2
                 self._detector = GroundedSAM2(detection_kwargs.sam2_checkpoint, detection_kwargs.model_cfg, device)
             else:
@@ -234,7 +247,6 @@ class SceneGraphSim:
             )])
         
     
-    
     def update_frontier_nodes(self, frontier_nodes):
         self.filtered_obj_positions = np.array(self.filtered_obj_positions)
         self.filtered_obj_ids = np.array(self.filtered_obj_ids)
@@ -243,7 +255,6 @@ class SceneGraphSim:
             attr={}
             attr['position'] = list(frontier_nodes[i])
             attr['name'] = 'frontier'
-            attr['type'] = 'frontier'
             attr['layer'] = 2
             nodeid = f'frontier_{i}'
             self._frontier_node_ids.append(nodeid)
@@ -269,11 +280,27 @@ class SceneGraphSim:
 
     def add_room_labels_to_sg(self):
         self._room_names = []
-        for room_id in self._room_ids:
-            place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id] # ignore room->room
-            object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
-            object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for object_id in object_ids])
-            
+        if len(self._room_ids)>0:
+            for room_id in self._room_ids:
+                place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id] # ignore room->room
+                object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
+                object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for object_id in object_ids])
+                
+                start = time.time()
+                completion = client.beta.chat.completions.parse(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "user", "content": f"Given the list of objects: {object_names}. Which room are these objects most likely found in? Keep explanation very brief."}
+                    ],
+                    response_format=Room_response,
+                )
+                print(f" ======== time for room {room_id} enrichment: {time.time()-start}")
+                self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
+                self._room_names.append(completion.choices[0].message.parsed.room.value)
+        else:
+            # If no room nodes exist, add room_0 to graph and egdes to regions 
+            self._room_ids = ['room_0']
+            object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for object_id in self._object_node_ids])
             start = time.time()
             completion = client.beta.chat.completions.parse(
                 model="gpt-4o-mini",
@@ -282,9 +309,26 @@ class SceneGraphSim:
                 ],
                 response_format=Room_response,
             )
-            print(f" ======== time for room {room_id} enrichment: {time.time()-start}")
-            self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
+            print(f" ======== time for room enrichment: {time.time()-start}")
+
+            # Add node to graph
+            attr={
+                'name': completion.choices[0].message.parsed.room.value,
+                'layer': 4
+            }
+            self.filtered_netx_graph.add_nodes_from([('room_0', attr)])
             self._room_names.append(completion.choices[0].message.parsed.room.value)
+
+            # Add edges from room to region
+            edge_type = 'room-to-region'
+            for reg_id in self._region_node_ids:
+                self.filtered_netx_graph.add_edges_from([(
+                    'room_0', reg_id,
+                    {'source_name': 'room',
+                    'target_name': 'region',
+                    'type': edge_type}
+                )])
+
 
     def _get_node_properties(self, node):
         # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
@@ -490,8 +534,8 @@ class SceneGraphSim:
             subsampled_extrinsics,
             [self.enrich_object_labels]*len(subsampled_imgs), 
             self._detector_path, 
-            return_mask=self.sg_cfg.return_mask,
-            visualize=self.sg_cfg.visualize_detections)
+            return_mask=self.sg_cfg.detection.return_mask,
+            visualize=self.sg_cfg.detection.visualize_detections)
 
     def update_objects_in_sg(self, results, masks_batch, depth_list, extrinsics_list, intrinsics):
         for idx in range(len(results)):
@@ -511,7 +555,7 @@ class SceneGraphSim:
 
     def save_best_image(self, imgs_rgb, save_image):
 
-        if len(imgs_rgb)>0 and save_image and (self.sg_cfg.use_clip_for_images or self.sg_cfg.use_siglip_for_images):
+        if len(imgs_rgb)>0 and save_image and (self.sg_cfg.key_frame_selection.use_clip_for_images or self.sg_cfg.key_frame_selection.use_siglip_for_images):
             start = time.time()
 
             imgs_rgb = np.array(imgs_rgb)
@@ -523,30 +567,31 @@ class SceneGraphSim:
             useful_imgs = imgs_rgb[useful_img_idxs]
             sampled_images = useful_imgs[::self.sg_cfg.img_subsample_freq]
 
-            padding = True if self.sg_cfg.use_clip_for_images else "max_length" # HuggingFace says SigLIP was trained on "max_length"
+            padding = True if self.sg_cfg.key_frame_selection.use_clip_for_images else "max_length" # HuggingFace says SigLIP was trained on "max_length"
             imgs_embed = self.processor(images=sampled_images, return_tensors="pt", padding=padding).to(self.device)
             with torch.no_grad():
-                outputs = self.model(**self.question_embed, **imgs_embed)
+                outputs = self.model(**self.question_embed_labels, **imgs_embed)
             logits_per_text = outputs.logits_per_image # this is the image-text similarity score
             probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities
     
             probs, logits_per_text = probs.detach().cpu().numpy(), logits_per_text.squeeze().detach().cpu().numpy()
             best = np.argmax(probs)
+            top_k_indices = np.argsort(probs)[::-1][:self.sg_cfg.key_frame_selection.topk]
 
-            if self.sg_cfg.visualize_best_image:
+            if self.sg_cfg.key_frame_selection.visualize_best_image:
                 labeled_frames = []
                 for idx in range(len(sampled_images)):
                     color_img = sampled_images[idx].copy()
                     label = f'{probs[idx]:.2f}'
-                    if idx == best:
-                        label = label + '_best'
+                    if idx in top_k_indices:
+                        label = label + f'_best{np.where(top_k_indices==idx)[0][0]}'
                     cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
                     labeled_frames.append(color_img)
 
                 imageio.mimsave(self.output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
 
             if save_image:
-                curr_img = Image.fromarray(sampled_images[best])
+                curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
                 curr_img.save(self.output_path / "current_img.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
 

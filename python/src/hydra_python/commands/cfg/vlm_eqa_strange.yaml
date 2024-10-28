@@ -1,7 +1,7 @@
 # General
 seed: 42
-exp_name: test_planner
-# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_test
+# exp_name: test_planner
+exp_name: explore_eqa_${vlm.name}_heirar
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
@@ -27,15 +27,18 @@ detection:
 scene_graph_sim:
   enrich_rooms: True
   enrich_objects: False
-  use_clip_for_images: False
-  use_siglip_for_images: True
+  key_frame_selection:
+    use_clip_for_images: False
+    use_siglip_for_images: True
+    topk: 2
+    visualize_best_image: True
+  detection:
+    detection_model: GroundedSAM2
+    visualize_detections: False
+    return_mask: False
+    min_detection_confidence: 0.75
   img_subsample_freq: 3
-  detection_model: GroundedSAM2
-  visualize_detections: False
-  return_mask: False
-  visualize_best_image: False
-  min_detection_confidence: 0.75
-
+  
 vlm:
   name: 'gpt' # 'gemini'
   use_image: True

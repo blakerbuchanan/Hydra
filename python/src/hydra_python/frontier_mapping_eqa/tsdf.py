@@ -649,11 +649,11 @@ class TSDFPlanner:
         
         
         # Logging 2D images
-        self._rr_logger.log_2d_frontier_data(
-            unoccupied_reachable_img*255, 
-            unexplored*255, 
-            self._tsdf_vol_cpu[:, :, self._height_voxel]*255, 
-        )
+        # self._rr_logger.log_2d_frontier_data(
+        #     unoccupied_reachable_img*255, 
+        #     unexplored*255, 
+        #     self._tsdf_vol_cpu[:, :, self._height_voxel]*255, 
+        # )
 
         # Convert back to world coordinates
         unoccupied_reachable_normal = unoccupied_reachable * self._voxel_size + self._vol_origin[:2]

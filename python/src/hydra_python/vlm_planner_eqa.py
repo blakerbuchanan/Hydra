@@ -10,6 +10,7 @@ import google.generativeai as genai
 import os
 import mimetypes
 from hydra_python.utils import get_instruction_from_eqa_data
+from pydantic import BaseModel
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
@@ -22,7 +23,7 @@ genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 # Choose a Gemini model.
 gemini_model = genai.GenerativeModel(model_name="gemini-1.5-pro-latest")
 
-from pydantic import BaseModel
+
 
 def encode_image(image_path):
   with open(image_path, "rb") as image_file:
@@ -32,7 +33,7 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
 
     class Goto_frontier_node_step(BaseModel):
         explanation_frontier: Annotated[str, "Explain reasoning for choosing this frontier to explore by referencing list of objects (<id> and <name>) connected to that frontier node via a link (refer to scene graph)."]
-        action: frontier_node_list
+        frontier_id: frontier_node_list
 
     class Goto_object_node_step(BaseModel):
         explanation_room: Annotated[str, "Explain very briefly reasoning for selecting this room."]
@@ -47,7 +48,7 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
         answer: Annotated[Answer_options, "Select the correct answer from the options."]
         explanation_conf: Annotated[str, "Explain the reasoning behind the confidence level of your answer."]
         confidence_level: Annotated[float, "Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain."]
-        is_confident: Annotated[bool, "Choose TRUE, if you are very confident about answering the question correctly. Choose 'FALSE', if you are uncertain of the answer. Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly."]
+        is_confident: Annotated[bool, "Do not use just commensense knowledge to decide confidence. Answer based on current and past observations. Choose TRUE, if you are very confident about answering the question correctly based on current and past oberservations. Choose 'FALSE', if you are uncertain of the answer and should explore more to ground your answer in the current envioronment. Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly."]
 
     class PlannerResponse(BaseModel):
         steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
@@ -57,64 +58,47 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
     
     return PlannerResponse
 
-def create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
-
-    class Confidence_check(str, Enum):
-        Confident_in_correctly_answering_question = "yes"
-        Not_confident_in_correctly_answering_question = "no"
-
-    action = genai.protos.Schema(
-            type = genai.protos.Type.OBJECT,
-            properties = {
-                'name':  genai.protos.Schema(type=genai.protos.Type.STRING),
-                'value':  genai.protos.Schema(type=genai.protos.Type.STRING)
-            },
-            required=['name', 'value']
-        )
+def create_planner_response_gemini(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options):
     
     step = genai.protos.Schema(
-            type=genai.protos.Type.OBJECT,
-            properties={
-                'type': genai.protos.Schema(
-                    type=genai.protos.Type.STRING,
-                    enum=["Goto_frontier_node_step", "Goto_object_node_step", "Done_step"]
-                ),
-                'explanation': genai.protos.Schema(type=genai.protos.Type.STRING),
-                'action': genai.protos.Schema(
-                    type=genai.protos.Type.OBJECT,
-                    properties={
-                        'name': genai.protos.Schema(
-                            type=genai.protos.Type.STRING,
-                            enum=[member.name for member in Goto_object_node_action] + [member.name for member in Goto_frontier_node_action] + ["done_with_task"]
-                        ),
-                        'value': genai.protos.Schema(
-                            type=genai.protos.Type.STRING,
-                            enum=[member.value for member in Goto_object_node_action] + [member.name for member in Goto_frontier_node_action] + ["done_with_task"]
-                        ),
-                    },
-                    required=['name', 'value']
-                )
-            },
-            required=['type', 'explanation', 'action']
-        )
+        type=genai.protos.Type.OBJECT,
+        properties={
+            'explanation': genai.protos.Schema(type=genai.protos.Type.STRING),
+            'action': genai.protos.Schema(
+                type=genai.protos.Type.OBJECT,
+                properties={
+                    'name': genai.protos.Schema(
+                        type=genai.protos.Type.STRING,
+                        enum=[member.name for member in object_node_list] + [member.name for member in Goto_frontier_node_action]
+                    ),
+                    'value': genai.protos.Schema(
+                        type=genai.protos.Type.STRING,
+                        enum=[member.value for member in Goto_object_node_action] + [member.name for member in Goto_frontier_node_action]
+                    ),
+                },
+                required=['name', 'value']
+            )
+        },
+        required=['explanation', 'action']
+    )
 
     answer = genai.protos.Schema(
-                    type=genai.protos.Type.OBJECT,
-                    properties={
-                        'explanation_ans': genai.protos.Schema(
-                            type=genai.protos.Type.STRING
-                        ),
-                        'answer': genai.protos.Schema(
-                            type=genai.protos.Type.STRING,
-                            enum=[member.name for member in Answer_options]
-                        ),
-                        'value': genai.protos.Schema(
-                            type=genai.protos.Type.STRING,
-                            enum=[member.value for member in Answer_options]
-                        ),
-                    },
-                    required=['explanation_ans', 'answer', 'value']
-                )
+        type=genai.protos.Type.OBJECT,
+        properties={
+            'explanation_ans': genai.protos.Schema(
+                type=genai.protos.Type.STRING
+            ),
+            'answer': genai.protos.Schema(
+                type=genai.protos.Type.STRING,
+                enum=[member.name for member in Answer_options]
+            ),
+            'value': genai.protos.Schema(
+                type=genai.protos.Type.STRING,
+                enum=[member.value for member in Answer_options]
+            ),
+        },
+        required=['explanation_ans', 'answer', 'value']
+    )
 
     confidence = genai.protos.Schema(
                     type=genai.protos.Type.OBJECT,
@@ -166,7 +150,6 @@ class VLMPLannerEQA:
         self._t = 0
 
         self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
-
         self.sg_sim = sg_sim
 
     @property
@@ -174,7 +157,7 @@ class VLMPLannerEQA:
         return self._t
     
     def get_actions(self): 
-        object_node_list = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
+        object_node_list = Enum('object_node_list', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
         if len(self.sg_sim.frontier_node_ids)> 0:
             frontier_node_list = Enum('frontier_node_list', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
         else:
@@ -196,12 +179,11 @@ class VLMPLannerEQA:
             Finally the agent node is where you are located in the environment. There is an edge between a region node and the agent node, depicting which visited area of which room the agent is located in."
         current_state_des = "'CURRENT STATE' will give you the exact location of the agent in the scene graph by giving you the agent node id, location, room_id and room name. Additionally, you will also be given the current view of the agent as an image. "
         
-        
-        prompt = f"You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
+        prompt = f"You are an excellent heirarchical graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  {scene_graph_desc}. {current_state_des}\
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
-            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
-            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. "
+            Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. \n \
+            Goto_object_node_step: Navigates to a certain seen object. Choose this step in a heirarchical manner by first reasoning about which room you should be in to best answer the question, then the region where a certain collection of relevant objects are located and then the specific object."
 
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
@@ -304,7 +286,7 @@ class VLMPLannerEQA:
             # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
 
-        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
+        frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options = self.get_actions()
         
         if self._use_image:
             image_path = self._output_path / "current_img.png"
@@ -331,10 +313,16 @@ class VLMPLannerEQA:
         while not succ:
             try:
                 start = time.time()
-
-                response = gemini_model.generate_content(messages,
+                response = gemini_model.generate_content(
+                    messages,
                     generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json", response_schema=create_planner_response_gemini(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options)),
+                    response_mime_type="application/json", 
+                    response_schema=create_planner_response_gemini(
+                        frontier_node_list, 
+                        room_node_list, 
+                        region_node_list, 
+                        object_node_list, 
+                        Answer_options)),
                 )
 
                 print(f"Time taken for planning next step: {time.time()-start}s")
@@ -381,7 +369,10 @@ class VLMPLannerEQA:
                 else:
                     target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
         if self._vlm_type == 'gpt':
-            target_pose = self.sg_sim.get_position_from_id(step.action.name)
+            if step.__class__.__name__ == 'Goto_object_node_step':
+                target_pose = self.sg_sim.get_position_from_id(step.object_id.name)
+            else:
+                target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
 
         # Saving outputs to file
         self._outputs_to_save.append(f'At t={self._t}: \n \
