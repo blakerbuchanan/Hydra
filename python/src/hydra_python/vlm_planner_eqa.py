@@ -1,6 +1,6 @@
 import json
 from enum import Enum
-from typing import List, Tuple, Literal, Any, Union, Optional
+from typing import List, Tuple, Literal, Any, Union, Optional, Annotated
 import time
 import hydra_python as hydra
 import base64
@@ -28,44 +28,32 @@ def encode_image(image_path):
   with open(image_path, "rb") as image_file:
     return base64.b64encode(image_file.read()).decode('utf-8')
 
-def create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options):
-    class Done_action(str, Enum):
-        Done = "done_with_task"
-    
-    class Confidence_check(str, Enum):
-        Confident_in_correctly_answering_question = "yes"
-        Not_confident_in_correctly_answering_question = "no"
-
-    class Goto_visited_node_step(BaseModel):
-        explanation_visited: str
-        action: Goto_visited_node_action
+def create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options):
 
     class Goto_frontier_node_step(BaseModel):
-        explanation_frontier: str
-        action: Goto_frontier_node_action
+        explanation_frontier: Annotated[str, "Explain reasoning for choosing this frontier to explore by referencing list of objects (<id> and <name>) connected to that frontier node via a link (refer to scene graph)."]
+        action: frontier_node_list
 
     class Goto_object_node_step(BaseModel):
-        explanation_obj: str
-        action: Goto_object_node_action
-
-    class Done_step(BaseModel):
-        explanation_done: str
-        action: Done_action
+        explanation_room: Annotated[str, "Explain very briefly reasoning for selecting this room."]
+        explanation_region: Annotated[str, "Explain very briefly reasoning for selecting this region."]
+        explanation_obj: Annotated[str, "Explain very briefly reasoning for selecting this object."]
+        room_id: Annotated[room_node_list, "Choose the room which contains the object you want to goto"]
+        region_id:  Annotated[region_node_list, "Only select from region nodes connected to the room node (in the room)."]
+        object_id: Annotated[object_node_list, "Only select from objects connected to the region node (in the region)."]
     
     class Answer(BaseModel):
-        explanation_ans: str
-        answer: Answer_options
-
-    class Confidence(BaseModel):
-        explanation_conf: str
-        answer: Confidence_check
+        explanation_ans: Annotated[str, "Explain the reasoning for selecting the answer."]
+        answer: Annotated[Answer_options, "Select the correct answer from the options."]
+        explanation_conf: Annotated[str, "Explain the reasoning behind the confidence level of your answer."]
+        confidence_level: Annotated[float, "Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain."]
+        is_confident: Annotated[bool, "Choose TRUE, if you are very confident about answering the question correctly. Choose 'FALSE', if you are uncertain of the answer. Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly."]
 
     class PlannerResponse(BaseModel):
         steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
         answer: Answer
-        confidence: Confidence
-        image_description: str
-        scene_graph_description: str
+        image_description: Annotated[str, "Describe the CURRENT IMAGE. Pay special attention to features that can help answer the question or select future actions."]
+        scene_graph_description: Annotated[str, "Describe the SCENE GRAPH. Pay special attention to features that can help answer the question or select future actions."]
     
     return PlannerResponse
 
@@ -174,7 +162,6 @@ class VLMPLannerEQA:
         self._use_image = cfg.use_image
 
         self._example_plan = '' #TODO(saumya)
-        self._done = False
         self._history = ''
         self._t = 0
 
@@ -183,42 +170,38 @@ class VLMPLannerEQA:
         self.sg_sim = sg_sim
 
     @property
-    def done(self):
-        return self._done
-    
-    @property
     def t(self):
         return self._t
     
-    def get_actions(self):
-        Goto_visited_node_action = Enum('Goto_visited_node_action', {ac: ac for ac in self.sg_sim.visited_node_ids}, type=str)
-        Goto_object_node_action = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
+    def get_actions(self): 
+        object_node_list = Enum('Goto_object_node_action', {id: name for id, name in zip(self.sg_sim.object_node_ids, self.sg_sim.object_node_names)}, type=str)
         if len(self.sg_sim.frontier_node_ids)> 0:
-            Goto_frontier_node_action = Enum('Goto_frontier_node_action', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
+            frontier_node_list = Enum('frontier_node_list', {ac: ac for ac in self.sg_sim.frontier_node_ids}, type=str)
         else:
-            Goto_frontier_node_action = Enum('Goto_frontier_node_action', {'frontier_0': 'Do not choose this option. No more frontiers left.'}, type=str)
+            frontier_node_list = Enum('frontier_node_list', {'frontier_0': 'Do not choose this option. No more frontiers left.'}, type=str)
+        
+        room_node_list = Enum('room_node_list', {id: name for id, name in zip(self.sg_sim.room_node_ids, self.sg_sim.room_node_names)}, type=str)
+        region_node_list = Enum('region_node_list', {ac: ac for ac in self.sg_sim.region_node_ids}, type=str)
         Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates, self.choices)}, type=str)
-        return Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options
+        return frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options
     
     @property
     def agent_role_prompt(self):
         scene_graph_desc = "A scene graph represents an indoor environment in a hierarchical tree structure consisting of nodes and edges/links. There are six types of nodes: building, rooms, visited areas, frontiers, objects, and agent in the environemnt. \n \
             The tree structure is as follows: At the highest level 5 is a 'building' node. \n \
             At level 4 are room nodes. There are links connecting the building node to each room node. \n \
-            At the lower level 3, are visited and frontier nodes. 'visited' node represent area of a room that is already explored. Frontier nodes represent areas that are at the boundary of visited and unexplored areas. There are links from room nodes to corresponding visited and frontier nodes depicted which room they are located in. \n \
-            At the lowest level 2 are object nodes and agent nodes. There is an edge from visited node to each object node depicting which visited area of which room the object is located in. \
+            At the lower level 3, are region and frontier nodes. 'region' node represent region of room that is already explored. Frontier nodes represent areas that are at the boundary of visited and unexplored areas. There are links from room nodes to corresponding region and frontier nodes depicted which room they are located in. \n \
+            At the lowest level 2 are object nodes and agent nodes. There is an edge from region node to each object node depicting which visited area of which room the object is located in. \
             There are also links between frontier nodes and objects nodes, depicting the objects in the vicinity of a frontier node. \n \
-            Finally the agent node is where you are located in the environment. There is an edge between a visited node and the agent node, depicting which visited area of which room the agent is located in."
+            Finally the agent node is where you are located in the environment. There is an edge between a region node and the agent node, depicting which visited area of which room the agent is located in."
         current_state_des = "'CURRENT STATE' will give you the exact location of the agent in the scene graph by giving you the agent node id, location, room_id and room name. Additionally, you will also be given the current view of the agent as an image. "
         
         
         prompt = f"You are an excellent graph planning agent. Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.\
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  {scene_graph_desc}. {current_state_des}\
-            You are required to report whether using the scene graph and your current state and image, you are able to answer the question 'CORRECTLY' with very high Confidence. If are uncertain of the answer, and you think that exploring the scene more or going nearer to relevant objects will give you more information to better answer the question, you should do that and anwer 'no'. If you are confident about answering the question, answer 'yes'. \n  \
-            You are also required to provide a brief description of the current image 'image_description' and of the scene graph 'scene_graph_description' and explain how the image and scene graph are helpful in answering the question and for choosing future actions. \n \
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. In 'explanation_frontier' explain why you are choosing a specific frontier by providing the list of objects (<id> and <name>) of all objects connected to that frontier node via a link (refer to scene graph). Also comment on how these objects relevant for the question? \n \
-            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. Provide explanation of why you chose this action. Also specify which room and visited node this object is located in. "
+            Goto_object_node_step: Navigates to a certain seen object. This can be used if you think going nearer to that object or to the area around that object will help you answer the quesion better, since you will be given an image of that area in the next step. "
 
         if self._vlm_type == 'gemini':
             prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
@@ -281,7 +264,7 @@ class VLMPLannerEQA:
                     ]
                 })
 
-        Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options = self.get_actions()
+        frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options = self.get_actions()
 
         succ=False
         while not succ:
@@ -291,7 +274,7 @@ class VLMPLannerEQA:
                     model="gpt-4o-mini",
                     # model="gpt-4o-2024-08-06",
                     messages=messages,
-                    response_format=create_planner_response(Goto_visited_node_action, Goto_object_node_action, Goto_frontier_node_action, Answer_options),
+                    response_format=create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options),
                 )
                 print(f"Time taken for planning next step: {time.time()-start}s")
                 plan = completion.choices[0].message
@@ -310,7 +293,7 @@ class VLMPLannerEQA:
         else:
             img_desc = ' '
         
-        return step, plan.parsed.confidence, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
+        return step, plan.parsed.answer, img_desc, plan.parsed.scene_graph_description
     
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
@@ -383,16 +366,14 @@ class VLMPLannerEQA:
 
         sg_desc=''
         if self._vlm_type == 'gpt':
-            step, confidence, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
+            step, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
 
         if self._vlm_type == 'gemini':
             step, confidence, answer, img_desc = self.get_gemini_output(current_state_prompt)
 
-
-        print(f'At t={self._t}: \n {step}')
+        
         if self._vlm_type == 'gemini':
             if 'done_with_task' in step["action"]["name"]:
-                self._done = True
                 target_pose = None
             else:
                 if step['type'] == 'Goto_object_node_step':
@@ -400,17 +381,12 @@ class VLMPLannerEQA:
                 else:
                     target_pose = self.sg_sim.get_position_from_id(step["action"]["name"])
         if self._vlm_type == 'gpt':
-            if 'done_with_task' in step.action.value:
-                self._done = True
-                target_pose = None
-            else:
-                target_pose = self.sg_sim.get_position_from_id(step.action.name)
+            target_pose = self.sg_sim.get_position_from_id(step.action.name)
 
         # Saving outputs to file
         self._outputs_to_save.append(f'At t={self._t}: \n \
                                         Agent state: {agent_state} \n \
                                         LLM output: {step}. \n \
-                                        Confidence: {confidence} \n \
                                         Answer: {answer} \n \
                                         Image desc: {img_desc} \n \
                                         Scene graph desc: {sg_desc} \n \n')
@@ -418,8 +394,10 @@ class VLMPLannerEQA:
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
 
+        print(f'At t={self._t}: \n {step} \n {answer}')
+
         self._t += 1
         if self._vlm_type == 'gpt':
-            return target_pose, self.done, confidence.answer.value, answer.answer.name
+            return target_pose, answer.is_confident, answer.answer.name
         if self._vlm_type == 'gemini':
-            return target_pose, self.done, confidence["answer"], answer
+            return target_pose, confidence["answer"], answer

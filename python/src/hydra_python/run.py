@@ -159,7 +159,7 @@ def run(
 
     #rr.shutdown()
 
-
+import os
 def run_eqa(
     pipeline,
     habitat_data,
@@ -177,7 +177,8 @@ def run_eqa(
     agent_positions, agent_quats_wxyz = [], []
     imgs_rgb, imgs_depth, extrinsics = [], [], []
     step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
-
+    # idx=0
+    os.makedirs(output_path/'traj0', exist_ok=True)
     for pose in pose_source:
         pipeline.graph.save(output_path / "dsg.json", False)
         pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
@@ -197,6 +198,10 @@ def run_eqa(
         cam_pose_tsdf = get_cam_pose_tsdf(habitat_data.get_depth_sensor_state())
         extrinsics.append(cam_pose_tsdf)
         pts_normal = pos_habitat_to_normal(pose[1])
+
+        # img = Image.fromarray(habitat_data.rgb)
+        # img.save(output_path/'traj0'/ f"img_{idx}.png")
+        # idx+=1
 
         if tsdf_planner:
             tsdf_planner.update(
@@ -237,7 +242,6 @@ def run_eqa(
 
         if step_callback:
             step_callback(pipeline, None)
-    
     if voxel_space:
         voxel_space.update(z=agent_pos[2])
         frontier_nodes = voxel_space.clustered_frontiers
