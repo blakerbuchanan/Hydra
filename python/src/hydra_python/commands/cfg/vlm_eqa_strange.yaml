@@ -1,7 +1,7 @@
 # General
 seed: 42
 # exp_name: test_planner
-exp_name: explore_eqa_${vlm.name}_heirar
+exp_name: explore_eqa_${vlm.name}_heirar_gpt4o
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
@@ -40,8 +40,11 @@ scene_graph_sim:
   img_subsample_freq: 3
   
 vlm:
-  name: 'gpt' # 'gemini'
+  name: 'gpt' # 'gemini', 'gpt-4o-mini', 
   use_image: True
+  use_done_action: False
+  use_history: False
+  early_exit: True
 
 planner:
   max_step_room_size_ratio: 3

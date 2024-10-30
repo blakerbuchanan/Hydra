@@ -56,8 +56,8 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        # if question_ind in [0, 77, 78, 81, 89]:
-        #     continue
+        if question_ind in [2,11]:
+            continue
 
         question_data = questions_data[question_ind]
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
@@ -126,29 +126,38 @@ def main(cfg):
             save_image=cfg.vlm.use_image,
         )
 
-        vlm_planner = hydra.VLMPLannerEQA(
-            cfg.vlm,
-            sg_sim,
-            questions_data[question_ind], 
-            question_path)
+        if 'gpt' in cfg.vlm.name.lower():
+            vlm_planner = hydra.VLMPLannerEQAGPT(
+                cfg.vlm,
+                sg_sim,
+                questions_data[question_ind], 
+                question_path)
+        elif 'gemini' in cfg.vlm.name.lower():
+            vlm_planner = hydra.VLMPLannerEQAGemini(
+                cfg.vlm,
+                sg_sim,
+                questions_data[question_ind], 
+                question_path)
+        else:
+            raise NotImplementedError('VLM planner not implemented.')
         
+        click.secho(f'Index:{question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}',fg="green",)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
         num_steps = 20
         succ = False
         for cnt_step in range(num_steps):
             start = time.time()
-            target_pose, confidence, answer_output = vlm_planner.get_next_action()
+            target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
             click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
 
-            if confidence:
-                succ = answer == answer_output
+            if is_confident:
+                succ = (answer == answer_output)
                 if succ:
                     successes += 1
                     click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
                     click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
-                    log_experiment_status
                 else:
                     click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
                     click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
@@ -189,8 +198,12 @@ def main(cfg):
                             sg_sim=sg_sim,
                             save_image=cfg.vlm.use_image,
                         )
-        
-        log_experiment_status(experiment_id, succ, metrics={'steps': cnt_step}, filename=results_filename)
+        metrics = {
+            'steps': cnt_step,
+            'is_confident': is_confident,
+            'confidence_level': confidence_level
+        }
+        log_experiment_status(experiment_id, succ, metrics=metrics, filename=results_filename)
         habitat_data._sim.close(destroy=True)
         pipeline.save()
 
