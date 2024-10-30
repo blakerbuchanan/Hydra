@@ -186,7 +186,15 @@ class RRLogger:
         # rr.log("world/agent", rr.Transform3D(transform=camera_from_world))
         # rr.log("world/agent", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
         rr.log(f"{self.primary_camera_entity}/rgb", rr.Image(data.rgb).compress(jpeg_quality=95))
-        # rr.log(f"{self.primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
+        rr.log(f"{self.primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
+
+    def log_rosbag_img_data(self, data):
+        # log the camera transform, rgb image, and depth image
+        # rr.log("world/agent", rr.Transform3D(transform=camera_from_world))
+        # rr.log("world/agent", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
+        rr.log(f"{self.primary_camera_entity}/rgb", rr.Image(np.transpose(data.rgb, axes=(1, 0, 2))).compress(jpeg_quality=95))
+        rr.log(f"{self.primary_camera_entity}/depth", rr.DepthImage(data.depth.T, meter=1.0))
+        rr.log(f"{self.primary_camera_entity}/semantic", rr.SegmentationImage(data.semantic_image[:, :, 0].T))
 
     def log_2d_frontier_data(self, unoccupied, unexplored, tsdf):
         rr.log(f"{self.primary_camera_entity}/unoccupied", rr.Image(unoccupied).compress(jpeg_quality=95))
