@@ -37,7 +37,7 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
         answer: Annotated[Answer_options, "Select the correct answer from the options."]
         explanation_conf: Annotated[str, "Explain the reasoning behind the confidence level of your answer."]
         confidence_level: Annotated[float, "Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain."]
-        is_confident: Annotated[bool, "Do not use just commensense knowledge to decide confidence. Answer based on current and past observations. Choose TRUE, if you are very confident about answering the question correctly based on current and past oberservations. Choose 'FALSE', if you are uncertain of the answer and should explore more to ground your answer in the current envioronment. Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly."]
+        is_confident: Annotated[bool, "Do not use just commensense knowledge to decide confidence. Answer based on current and past observations. Choose TRUE, if 1) you are very confident about answering the question correctly based on current and past oberservations and 2) no further exploration will help you answer the question better. Choose 'FALSE', if you are uncertain of the answer and should explore more to ground your answer in the current envioronment. Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly."]
 
     class PlannerResponse(BaseModel):
         steps: List[Union[Goto_object_node_step, Goto_frontier_node_step]]
@@ -58,6 +58,7 @@ class VLMPLannerEQAGPT:
 
         self._example_plan = '' #TODO(saumya)
         self._history = ''
+        self.full_plan = ''
         self._t = 0
 
         self._outputs_to_save = [f'Question: {self._question}. \n Answer: {self._answer} \n']
@@ -138,8 +139,8 @@ class VLMPLannerEQAGPT:
             try:
                 start = time.time()
                 completion = client.beta.chat.completions.parse(
-                    # model="gpt-4o-mini",
-                    model="gpt-4o-2024-08-06",
+                    model="gpt-4o-mini",
+                    # model="gpt-4o-2024-08-06",
                     messages=messages,
                     response_format=create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options),
                 )
@@ -153,7 +154,11 @@ class VLMPLannerEQAGPT:
                 time.sleep(1)
 
         plan = completion.choices[0].message
-        step = plan.parsed.steps[0]
+
+        if len(plan.parsed.steps) > 0:
+            step = plan.parsed.steps[0]
+        else:
+            return None, None, None, None
 
         if self._use_image:
             img_desc = plan.parsed.image_description
@@ -170,6 +175,9 @@ class VLMPLannerEQAGPT:
 
         sg_desc=''
         step, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
+
+        if step is None:
+            return None, False, 0, 0
 
         if step.__class__.__name__ == 'Goto_object_node_step':
             target_pose = self.sg_sim.get_position_from_id(step.object_id.name)

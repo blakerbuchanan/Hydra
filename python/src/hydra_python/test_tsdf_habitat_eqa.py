@@ -110,7 +110,7 @@ def main(cfg):
         
         click.secho(f"Question:\n{vlm_question} \n Answer: {answer}",fg="green",)
 
-        num_steps = 20
+        num_steps = 7
         for i in range(num_steps):
             current_heading = habitat_data.get_heading_angle()
             desired_path, frontier_normal = tsdf_planner.sample_frontier()
@@ -145,7 +145,6 @@ def main(cfg):
                 sg_sim=sg_sim,
                 save_image=cfg.vlm.use_image,
             )
-            import ipdb; ipdb.set_trace()
             # bb = hydra.get_bb_from_sem(habitat_data)
         pipeline.save()
 

@@ -177,7 +177,7 @@ def initialize_hydra_pipeline(cfg, habitat_data, output_path):
     return pipeline
 
 from omegaconf import OmegaConf
-
+from pathlib import Path
 def initialize_hydra_pipeline_rosbag(cfg, camera_info, output_path):
     hydra.set_glog_level(cfg.glog_level, cfg.verbosity)
     configs = hydra.load_configs("habitat", labelspace_name=cfg.label_space)
@@ -190,13 +190,15 @@ def initialize_hydra_pipeline_rosbag(cfg, camera_info, output_path):
     pipeline_config = hydra.PipelineConfig(configs)
     pipeline_config.enable_reconstruction = True
 
-    hm3d_labelspace = OmegaConf.load('/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/hm3d_label_space.yaml')
+    config_path = Path(__file__).resolve().parent.parent.parent.parent / 'config/label_spaces/hm3d_label_space.yaml'
+    hm3d_labelspace = OmegaConf.load(config_path)
+
     names = [d.name for d in hm3d_labelspace.label_names]
     colormap = hydra.SegmentationColormap.from_names(names=names)
     pipeline_config.label_names = {i: x for i, x in enumerate(colormap.names)}
     colormap.fill_label_space(pipeline_config.label_space) # TODO: check
     
-    pipeline_config.label_space.colormap = {0: (np.array([255,255,255])).astype(np.uint8).tolist()}
+    # pipeline_config.label_space.colormap = {0: (np.array([255,255,255])).astype(np.uint8).tolist()}
     if output_path:
         pipeline_config.logs.log_dir = str(output_path)
     pipeline = hydra.HydraPipeline(

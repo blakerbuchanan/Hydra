@@ -1,22 +1,46 @@
 # General
 seed: 42
-exp_name: vlm_sg_stretch_tsdf_random
+exp_name: test_stretch_hydra
+# exp_name: explore_eqa_${vlm.name}_heirar_gpt4o
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
-
-vlm:
-  name: 'gpt' # 'gemini'
-  use_image: True
+results_filename: ${vlm.name}_images_${vlm.use_image}
+gpu: 0 
+sim_gpu: 0
 
 data:
-  question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'
-  init_pose_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/scene_init_poses.csv'
-  semantic_annot_data_path: '/mnt/hdd1/saumyas/data/semnav/hm3d-train-semantic-annots-v0.2'
-  scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
+  test_data_path: "/home/saumyas/Downloads/stretch_data/stretch_output_2024-10-29_21-20-00.pkl"
 
 logging:
   output_parent_dir: results
   save_obs: true
   save_freq: 10
+
+detection:
+  GroundedSAM2:
+    sam2_checkpoint: "/home/saumyas/Projects/semnav/Grounded-SAM-2/checkpoints/sam2.1_hiera_large.pt"
+    model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+scene_graph_sim:
+  enrich_rooms: True
+  enrich_objects: False
+  key_frame_selection:
+    use_clip_for_images: False
+    use_siglip_for_images: True
+    topk: 2
+    visualize_best_image: True
+  detection:
+    detection_model: GroundedSAM2
+    visualize_detections: False
+    return_mask: False
+    min_detection_confidence: 0.75
+  img_subsample_freq: 3
+  
+vlm:
+  name: 'gpt-4o-mini' # 'gemini', 'gpt-4o-mini', 
+  use_image: True
+  use_done_action: False
+  use_history: False
+  early_exit: True
 
 planner:
   max_step_room_size_ratio: 3
@@ -24,15 +48,16 @@ planner:
 
 habitat:
   scene_type: 'hm3d'
+  sim_gpu: ${sim_gpu}
+  inflation_radius: 0.25
   img_width: 640
   img_height: 480
-  camera_height: 0.7 # 1.5
-  camera_tilt_deg: -15 #-30
+  camera_height: 1.5
+  camera_tilt_deg: -30
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
-
-
+  
 hydra:
   glog_level: 0
   verbosity: 0
@@ -47,12 +72,14 @@ frontier_mapping:
   margin_w_ratio: 0.25
   margin_h_ratio: 0.6
   height_offset: 0.4
+  range_height: [-0.2, 0.2]
   visual_prompt:
     cluster_threshold: 1.0
+    num_clusters: 10
     num_prompt_points: 3
     num_max_unoccupied: 300
     min_points_for_clustering: 3
-    point_min_dist: 2
+    point_min_dist: 1
     point_max_dist: 10
     cam_offset: 0.6
     min_num_prompt_points: 2

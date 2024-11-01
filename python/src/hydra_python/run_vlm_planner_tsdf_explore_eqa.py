@@ -56,7 +56,7 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [2,11]:
+        if question_ind in [2,11,77,78]:
             continue
 
         question_data = questions_data[question_ind]

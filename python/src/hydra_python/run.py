@@ -226,7 +226,11 @@ def run_eqa(
             voxel_space.voxel_map.add_obs(obs)
             # voxel_space.update(z=agent_pos[2])
             # frontier_nodes = voxel_space.outside_frontier_points
-
+        
+        # if sg_sim:
+        #     # Should be done after saving default image cos this update overwrites it
+        #     sg_sim.update(imgs_rgb, imgs_depth, habitat_data.intrinsics, extrinsics, save_image=save_image, frontier_nodes=frontier_nodes)
+    
         if rr_logger:
             start = time.time()
             rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)

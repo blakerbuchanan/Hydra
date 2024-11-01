@@ -152,7 +152,7 @@ class SceneGraphSim:
                     attr['layer'] = node.layer
                     attr['timestamp'] = float(node.timestamp/1e8)
                     self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-                    self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
+                    self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
         self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
         self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
         
@@ -167,7 +167,7 @@ class SceneGraphSim:
             attr['name'] = node_name
             attr['layer'] = node.layer
 
-            # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
+            self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
@@ -224,8 +224,6 @@ class SceneGraphSim:
             edge_type = f'{source_type}-to-{target_type}'
             edgeid = f'{sourceid}-to-{targetid}'
 
-            # self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
-
             # Filtering scene graph
             if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
                 continue
@@ -238,7 +236,9 @@ class SceneGraphSim:
                 continue
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
-
+            
+            self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
+            
             self.filtered_netx_graph.add_edges_from([(
                 sourceid, targetid,
                 {'source_name': source_name,
