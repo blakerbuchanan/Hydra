@@ -35,6 +35,11 @@ class RRLogger:
                         contents=["$origin/semantic", "/world/annotations/**"],
                 ),
                 rrb.Spatial2DView(
+                        name="Instance Labels",
+                        origin=self.primary_camera_entity,
+                        contents=["$origin/instance", "/world/annotations/**"],
+                ),
+                rrb.Spatial2DView(
                         name="Depth",
                         origin=self.primary_camera_entity,
                         contents=["$origin/depth", "/world/annotations/**"],

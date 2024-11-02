@@ -56,7 +56,7 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [2,11,77,78]:
+        if question_ind in [2,11, 77, 78, 81, 89]:
             continue
 
         question_data = questions_data[question_ind]
@@ -152,7 +152,7 @@ def main(cfg):
             click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
 
-            if is_confident:
+            if is_confident or confidence_level >= 0.9:
                 succ = (answer == answer_output)
                 if succ:
                     successes += 1

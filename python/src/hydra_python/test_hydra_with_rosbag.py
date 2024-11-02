@@ -13,7 +13,7 @@ from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
 from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline_rosbag, get_instruction_from_eqa_data
-from hydra_python.run import hydra_get_mesh
+from hydra_python.utils import hydra_get_mesh
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import sys
 import torch

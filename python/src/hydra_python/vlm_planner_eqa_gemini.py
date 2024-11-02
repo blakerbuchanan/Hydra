@@ -93,7 +93,7 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
                     ),
                     'confidence_level': genai.protos.Schema(
                         type=genai.protos.Type.NUMBER,
-                        description="Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain."
+                        description="Rate your level of confidence. Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain that you can answer the question. This value represents your confidence in answering the question correctly, and not confidence pertaining to actions."
                     ),
                     'is_confident': genai.protos.Schema(
                         type=genai.protos.Type.BOOLEAN,
@@ -128,15 +128,21 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
             min_items = 1
         )
 
+    summary = genai.protos.Schema(
+                    type = genai.protos.Type.STRING,
+                    description="Provide a concise summary of the names of objects you have seen and their locations in the environment. Do this for both scene graph objects and objects identified in images."
+                )
+
     response_schema = genai.protos.Schema(
         type=genai.protos.Type.OBJECT,
         properties = {
             'steps': steps,
             'answer': answer,
             'image_description': image_description,
-            'scene_graph_description': scene_graph_description
+            'scene_graph_description': scene_graph_description,
+            'summary': summary
         },
-        required=['steps', 'answer', 'image_description', 'scene_graph_description']
+        required=['steps', 'answer', 'image_description', 'scene_graph_description', 'summary']
     )
 
     return response_schema
@@ -188,12 +194,12 @@ class VLMPLannerEQAGemini:
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  {scene_graph_desc}. {current_state_des}\
             You also have to choose the next action, one which will enable you to answer the question better. You can choose between two action types: Goto_frontier_node_step and Goto_object_node_step. \n \
             Goto_frontier_node_step: Navigates to a frontier (unexplored) node and will provide you with a new observation/image and the scene graph will be augmented/updated. \n \
-            Goto_object_node_step: Navigates to a certain seen object. Choose this step in a heirarchical manner by first reasoning about which room you should be in to best answer the question, then the region where a certain collection of relevant objects are located and then the specific object."
+            Goto_object_node_step: Navigates to a certain seen object. Choose this step in a heirarchical manner by first reasoning about which room you should be in to best answer the question, then the region where a certain collection of relevant objects are located and then the specific object. \n \
+            You should be very careful to not explore too much. If you are confident that you are in the correct room, you should explore there. \n \
+            You will also have access to PAST STEPS, which represents the history of where you have already explored. You can use this to explore more or answer the question if you think you have explored sufficiently. \n \
+            An example question you might encounter is 'How many pillows did I leave on the bed with green floral bedding?'. This means you should first locate a bed with floral bedding and then determine how many pillows it has. \n \
+            Many tasks first require you to locate a place, room, or object, and then determine something about the object itself or an object around it."
 
-        # if self._vlm_type == 'gemini':
-        #     prompt += "Each action field in your response schema will have a 'name' and a 'value' field. For frontier nodes, 'name' should look like frontier_<FRONTIER_NUMBER>. \
-        #         'value' should never be empty and should always look like frontier_<FRONTIER_NUMBER> or object_<OBJECT_NUMBER>, where <FRONTIER_NUMBER> and <OBJECT_NUMBER> represent the number assigned to the respective frontier or object in the scene graph. \
-        #         Furthermore, the 'steps' field should never be empty and should always contain one or more entries."
         return prompt
 
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -206,11 +212,16 @@ class VLMPLannerEQAGemini:
     def get_gemini_output(self, current_state_prompt):
         # TODO(blake):
         messages=[
-            {"role": "model", "parts": [{"text": f"AGENT ROLE: {self.agent_role_prompt_gemini}"}]},
+            {"role": "model", "parts": [{"text": f"AGENT ROLE: {self.agent_role_prompt}"}]},
             {"role": "model", "parts": [{"text": f"QUESTION: {self._question}"}]},
             {"role": "user", "parts": [{"text": f"CURRENT STATE: {current_state_prompt}."}]},
-            # {"role": "user", "content": f"EXAMPLE PLAN: {self._example_plan}"} # TODO(saumya)
         ]
+
+        if len(self._history)>0:
+            history = ""
+            for idx, h in enumerate(self._history):
+                history += f"Step {idx}: {h} \n"
+            messages.append({"role": "user", "parts": f"PAST STEPS: {history}"})
 
         frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options = self.get_actions()
         
@@ -271,6 +282,7 @@ class VLMPLannerEQAGemini:
             self.answer = ""
             self.is_confident = False
             self.explanation_ans = ""
+            self.confidence_level = 0.0
 
         answer = Answer()
         step = GeminiStep()
@@ -284,7 +296,10 @@ class VLMPLannerEQAGemini:
         answer.answer = response_dict["answer"]["answer"]
         answer.is_confident = response_dict['answer']['is_confident']
         answer.explanation_ans = response_dict['answer']['explanation_ans']
+        answer.confidence_level = response_dict['answer']['confidence_level']
         sg_desc = response_dict["scene_graph_description"]
+        summary = response_dict["summary"]
+        self._history += summary
 
         if self._use_image:
             img_desc = response_dict["image_description"]
@@ -294,9 +309,7 @@ class VLMPLannerEQAGemini:
         return step, answer, img_desc, sg_desc
     
 
-    def get_next_action(self):
-        # self.sg_sim.update()
-        
+    def get_next_action(self):        
         agent_state = self.sg_sim.get_current_semantic_state_str()
         current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
 
@@ -308,16 +321,16 @@ class VLMPLannerEQAGemini:
         else:
             target_pose = self.sg_sim.get_position_from_id(step.choice)
 
-        print(f'At t={self._t}: \n Step: {step.step_type} \n Answer explanation: {answer.explanation_ans}')
+        print(f'At t={self._t}: \n Step: {step.step_type} \n Answer: {answer.answer} \n Answer explanation: {answer.explanation_ans} \n Answer confidence: {answer.confidence_level}')
         # Saving outputs to file
         self._outputs_to_save.append(f'At t={self._t}: \n \
                                         Agent state: {agent_state} \n \
                                         LLM output: {step.step_type}, {step.choice}. \n \
-                                        Answer: {answer.answer}, {answer.explanation_ans} \n \
+                                        Answer: {answer.answer}, Exp: {answer.explanation_ans}, Conf: {answer.confidence_level} \n \
                                         Image desc: {img_desc} \n \
                                         Scene graph desc: {sg_desc} \n \n')
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
         self._t += 1
-        return target_pose, answer.is_confident, answer.answer
+        return target_pose, answer.is_confident, answer.confidence_level, answer.answer

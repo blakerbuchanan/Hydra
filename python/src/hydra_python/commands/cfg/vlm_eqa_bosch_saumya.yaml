@@ -1,8 +1,6 @@
 # General
 seed: 42
-# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_test_rosbag_stuff
-# exp_name: test_new_gemini_planner
-exp_name: test_new_rosbag
+exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_with_histobj_examples
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
@@ -44,7 +42,7 @@ scene_graph_sim:
     visualize_detections: False
     return_mask: False
     min_detection_confidence: 0.75
-  img_subsample_freq: 3
+  img_subsample_freq: 1
 
 planner:
   max_step_room_size_ratio: 3

@@ -2,13 +2,14 @@
 seed: 42
 exp_name: test_stretch_hydra
 # exp_name: explore_eqa_${vlm.name}_heirar_gpt4o
-output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
+output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
 sim_gpu: 0
 
 data:
-  test_data_path: "/home/saumyas/Downloads/stretch_data/stretch_output_2024-10-29_21-20-00.pkl"
+  # test_data_path: "/home/saumyas/Downloads/stretch_data/stretch_output_2024-10-29_21-20-00.pkl"
+  test_data_path: "/home/saumyas/semnav_workspace/src/hydra/outputs/test_data/data_with_semantics_2024-11-01_20-34-50.pkl"
 
 logging:
   output_parent_dir: results
@@ -47,7 +48,7 @@ planner:
   break_at_done: False
 
 habitat:
-  scene_type: 'hm3d'
+  scene_type: 'detic'
   sim_gpu: ${sim_gpu}
   inflation_radius: 0.25
   img_width: 640

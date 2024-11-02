@@ -322,7 +322,7 @@ class HabitatInterface:
         }
 
         category_map = np.array(list(object_to_cat_map.values()))
-        self._labelmap = hydra.LabelConverter(category_map)
+        self._labelmap = hydra.LabelConverter(category_map) # instance idx to category idx
 
         name_mapping = {}
         for c in self._sim.semantic_scene.categories:

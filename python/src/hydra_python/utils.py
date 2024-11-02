@@ -3,6 +3,16 @@ import csv, os, ast
 import click
 import numpy as np
 
+def hydra_get_mesh(pipeline):
+    vertices = pipeline.graph.mesh.get_vertices()
+    faces = pipeline.graph.mesh.get_faces()
+
+    mesh_vertices = vertices[:3, :].T
+    mesh_triangles = faces.T
+    mesh_colors = vertices[3:, :].T
+
+    return mesh_vertices, mesh_colors, mesh_triangles
+    
 def project_2d_to_3d(bbox_2d, depth_image, intrinsics, extrinsics):
     # Get the 2D bounding box corners
     x_min, y_min, x_max, y_max = bbox_2d
@@ -199,6 +209,60 @@ def initialize_hydra_pipeline_rosbag(cfg, camera_info, output_path):
     colormap.fill_label_space(pipeline_config.label_space) # TODO: check
     
     # pipeline_config.label_space.colormap = {0: (np.array([255,255,255])).astype(np.uint8).tolist()}
+    if output_path:
+        pipeline_config.logs.log_dir = str(output_path)
+    pipeline = hydra.HydraPipeline(
+        pipeline_config, robot_id=0, config_verbosity=cfg.config_verbosity, freeze_global_info=False)
+    pipeline.init(configs, hydra.create_camera(camera_info))
+
+    if output_path:
+        glog_dir = output_path / "logs"
+        if not glog_dir.exists():
+            glog_dir.mkdir()
+        hydra.set_glog_dir(str(glog_dir))
+    
+    return pipeline
+
+def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_mapping=None):
+    os.makedirs(output_path, exist_ok=True)
+    output_path = Path(output_path)
+
+    # Get camera info
+    camera_K = obs.camera_K
+    width = obs.rgb.shape[1]
+    height = obs.rgb.shape[0]
+    camera_info = {
+        "fx": float(camera_K[0,0]),
+        "fy": float(camera_K[1,1]),
+        "cx": float(camera_K[0,2]),
+        "cy": float(camera_K[1,2]),
+        "width": width,
+        "height": height,
+    }
+
+    hydra.set_glog_level(cfg.glog_level, cfg.verbosity)
+    configs = hydra.load_configs("habitat", labelspace_name=cfg.label_space)
+    if not configs:
+        click.secho(
+            f"Invalid config: dataset 'habitat' and label space '{cfg.label_space}'",
+            fg="red",
+        )
+        return
+    pipeline_config = hydra.PipelineConfig(configs)
+    pipeline_config.enable_reconstruction = True
+
+    if sensor_categories_mapping is not None:
+        names = [v for k, v in sensor_categories_mapping.items()]
+    else:
+        click.secho(f"Using default label space from habitat'",fg="red",)
+        config_path = Path(__file__).resolve().parent.parent.parent.parent / 'config/label_spaces/hm3d_label_space.yaml'
+        hm3d_labelspace = OmegaConf.load(config_path)
+        names = [d.name for d in hm3d_labelspace.label_names]
+
+    colormap = hydra.SegmentationColormap.from_names(names=names)
+    pipeline_config.label_names = {i: x for i, x in enumerate(colormap.names)}
+    colormap.fill_label_space(pipeline_config.label_space) # TODO: check
+    
     if output_path:
         pipeline_config.logs.log_dir = str(output_path)
     pipeline = hydra.HydraPipeline(

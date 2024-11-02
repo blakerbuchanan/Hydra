@@ -10,6 +10,7 @@ import threading, time
 from PIL import Image
 from scipy.special import softmax
 import threading
+from hydra_python.utils import hydra_get_mesh
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -33,17 +34,6 @@ class ImageVisualizer:
                 self._view.setPredefinedGradient("viridis")
         else:
             self._view.setImage(image, **kwargs)
-
-def hydra_get_mesh(pipeline):
-    vertices = pipeline.graph.mesh.get_vertices()
-    faces = pipeline.graph.mesh.get_faces()
-
-    mesh_vertices = vertices[:3, :].T
-    mesh_triangles = faces.T
-    mesh_colors = vertices[3:, :].T
-
-    return mesh_vertices, mesh_colors, mesh_triangles
-
 
 def hydra_output_callback(pipeline, visualizer):
     """Show graph."""
