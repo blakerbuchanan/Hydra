@@ -86,3 +86,24 @@ def write_to_pickle(obs_history, filename: str):
     print("============saving file")
     with open(output_pkl_filename, "wb") as f:
         pickle.dump(data, f)
+
+import numpy as np
+from hydra_python.frontier_mapping_eqa.geom import fps
+def cluster_frontiers(frontier_points, min_points_for_clustering, num_clusters, cluster_threshold):
+    # # cluster, or return none
+    if len(frontier_points) < min_points_for_clustering:
+        return frontier_points
+
+    clusters = fps(frontier_points, num_clusters)
+
+    # merge clusters if too close to each other
+    clusters_new = np.empty((0, 3))
+    for cluster in clusters:
+        if len(clusters_new) == 0:
+            clusters_new = np.vstack((clusters_new, cluster))
+        else:
+            clusters_array = np.array(clusters_new)
+            dist = np.sqrt(np.sum((clusters_array - cluster) ** 2, axis=1))
+            if np.min(dist) > cluster_threshold:
+                clusters_new = np.vstack((clusters_new, cluster))
+    return clusters_new

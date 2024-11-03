@@ -246,37 +246,37 @@ class SceneGraphSim:
                 'type': edge_type}
             )])
         
-    
     def update_frontier_nodes(self, frontier_nodes):
-        self.filtered_obj_positions = np.array(self.filtered_obj_positions)
-        self.filtered_obj_ids = np.array(self.filtered_obj_ids)
-        self._frontier_node_ids = []
-        for i in range(frontier_nodes.shape[0]):
-            attr={}
-            attr['position'] = list(frontier_nodes[i])
-            attr['name'] = 'frontier'
-            attr['layer'] = 2
-            nodeid = f'frontier_{i}'
-            self._frontier_node_ids.append(nodeid)
-            self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
+        if len(frontier_nodes)>0:
+            self.filtered_obj_positions = np.array(self.filtered_obj_positions)
+            self.filtered_obj_ids = np.array(self.filtered_obj_ids)
+            self._frontier_node_ids = []
+            for i in range(frontier_nodes.shape[0]):
+                attr={}
+                attr['position'] = list(frontier_nodes[i])
+                attr['name'] = 'frontier'
+                attr['layer'] = 2
+                nodeid = f'frontier_{i}'
+                self._frontier_node_ids.append(nodeid)
+                self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
 
-            dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
-            relevant_objs = dist < self.thresh
-            relevent_node_ids = self.filtered_obj_ids[relevant_objs]
-            relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
+                dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
+                relevant_objs = dist < self.thresh
+                relevent_node_ids = self.filtered_obj_ids[relevant_objs]
+                relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
 
-            edge_type = 'frontier-to-object'
-            
-            for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
-                edgeid = f'{nodeid}-to-{obj_id}'
+                edge_type = 'frontier-to-object'
+                
+                for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
+                    edgeid = f'{nodeid}-to-{obj_id}'
 
-                self.filtered_netx_graph.add_edges_from([(
-                    nodeid, obj_id,
-                    {'source_name': 'frontier',
-                    'target_name': 'object',
-                    'type': edge_type}
-                )])
-                self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
+                    self.filtered_netx_graph.add_edges_from([(
+                        nodeid, obj_id,
+                        {'source_name': 'frontier',
+                        'target_name': 'object',
+                        'type': edge_type}
+                    )])
+                    self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
     def add_room_labels_to_sg(self):
         self._room_names = []
@@ -507,7 +507,7 @@ class SceneGraphSim:
                 room_str = f' at room node: {room_id[0]} with name {room_name}'
         return f'{agent_loc_str} {room_str}'
     
-    def update(self, imgs_rgb, imgs_depth, intrinsics, extrinsics, save_image=False, frontier_nodes=None):
+    def update(self, imgs_rgb=[], imgs_depth=None, intrinsics=None, extrinsics=None, save_image=False, frontier_nodes=[]):
         # self._load_scene_graph()
         # self.test_sg()
         self._build_sg_from_hydra_graph()

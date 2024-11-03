@@ -21,7 +21,7 @@ from stretch.agent.zmq_client import HomeRobotZmqClient
 from stretch.core import get_parameters
 from stretch.perception import create_semantic_sensor
 
-
+import click
 def main(stretch_parameter_file, hydra_cfg):
 
     # Need to define these arguments
@@ -87,21 +87,67 @@ def main(stretch_parameter_file, hydra_cfg):
     # print("============writing pickle file")
     # write_to_pickle(agent.obs_history, 'data_with_semantics')
     # click.secho(f'Location: Bosch Pittsburgh lab',fg="green",)
+
+    if 'gpt' in hydra_cfg.vlm.name.lower():
+        vlm_planner = hydra.VLMPLannerEQAGPT(
+            hydra_cfg.vlm,
+            sg_sim,
+            questions_data[question_ind], 
+            question_path)
+    elif 'gemini' in hydra_cfg.vlm.name.lower():
+        vlm_planner = hydra.VLMPLannerEQAGemini(
+            hydra_cfg.vlm,
+            sg_sim,
+            questions_data[question_ind], 
+            question_path)
+    else:
+        raise NotImplementedError('VLM planner not implemented.')
     
-    manual_wait = False
-    agent.run_exploration(
-        manual_wait,
-        explore_iter=parameters["exploration_steps"],
-        task_goal=None,
-        random_goals=False,
-        go_home_at_end=False,
-        visualize=False,
+
+    run_vlm_planner(
+        manual_wait=False,
+        max_planning_steps=hydra_cfg.planner.max_planning_steps,
+        go_home_at_end=False
     )
+    rotated = False
+    succ = False
+    for p_step in range(hydra_cfg.planner.max_planning_steps):
+        click.secho(f"Planning step {p_step}",fg="green",)
+        start = agent.robot.get_base_pose()
+
+        start_is_valid = agent.space.is_valid(start, verbose=True)
+        # if start is not valid move backwards a bit
+        if not start_is_valid:
+            click.secho(f"Start not valid. back up a bit.",fg="yellow",)
+            ok = agent.recover_from_invalid_start()
+            if ok:
+                start = agent.robot.get_base_pose()
+                start_is_valid = agent.space.is_valid(start, verbose=True)
+            if not start_is_valid:
+                click.secho(f"Failed to recover from invalid start state!",fg="red",)
+                break
+        
+        (
+            target_pose, 
+            is_confident, 
+            confidence_level, 
+            answer_output
+        ) = vlm_planner.get_next_action()
+        agent.robot._rerun.log_text_data(vlm_planner.full_plan)
+        if is_confident or confidence_level >= 0.9:
+            succ = (answer == answer_output)
+            if succ:
+                successes += 1
+                click.secho(f"Success at step{p_step}",fg="blue",)
+                click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
+            else:
+                click.secho(f"Failure at step {p_step}=",fg="red",)
+                click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
+            # break # TODO break at confidence or not in cfg
+        else:
+            if target_pose is not None:
     
-
-
     # succ = False
-    # while (False == is_confident and succ == True) or step_count != max_steps:
 
     #     target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
     #     if target_pose is not None:

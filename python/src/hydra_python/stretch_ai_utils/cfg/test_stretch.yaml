@@ -157,6 +157,9 @@ motion_planner:
     min_dist: 0.1
     # Subsampling frontier space at this discretization
     step_dist: 0.2
+    min_points_for_clustering: 5
+    num_clusters: 10
+    cluster_threshold: 0.8
   goals:
     manipulation_radius: 0.45
 

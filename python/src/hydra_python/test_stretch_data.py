@@ -6,9 +6,9 @@ from scipy.spatial.transform import Rotation
 from tqdm import trange
 from typing import NamedTuple
 
-
 import rerun as rr
 
+import hydra_python as hydra
 from hydra_python import RRLogger
 from hydra_python.utils import initialize_hydra_pipeline_stretch
 from hydra_python.utils import hydra_get_mesh
@@ -16,6 +16,18 @@ from hydra_python.stretch_ai_utils.utils import write_config_yaml
 
 from stretch.core import get_parameters
 from stretch.perception import create_semantic_sensor
+
+import torch
+from dataclasses import dataclass
+
+@dataclass
+class Obs:
+    camera_K: any = None
+    rgb: any = None
+    depth: any = None
+    semantic: any = None
+    instance: any = None
+    task_observations: any = None
 
 def main(cfg):
     output_path = cfg.output_path
@@ -40,19 +52,25 @@ def main(cfg):
     # }
 
     parameters = get_parameters("/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/stretch_ai_utils/cfg/test_stretch.yaml")
-    device_id = parameters.data['device_id_sem_sensor']
-
-    Obs = NamedTuple("Obs", [("camera_K", None), ("rgb", None)])
     obs = Obs(camera_K=camera_K, rgb=data['rgb'][0])
 
     semantic_sensor = create_semantic_sensor(
         parameters=parameters,
-        device_id=device_id,
+        device_id=parameters.data['device_id_sem_sensor'],
         verbose=True,
     )
     sensor_categories_mapping = semantic_sensor.seg_id_to_name
     # write_config_yaml(sensor_categories_mapping)
+    # import ipdb; ipdb.set_trace()
     pipeline = initialize_hydra_pipeline_stretch(cfg.hydra, obs, output_path, sensor_categories_mapping)
+
+    device = f"cuda:{cfg.gpu}" if torch.cuda.is_available() else "cpu"
+    sg_sim = hydra.SceneGraphSim(
+        cfg, 
+        output_path, 
+        pipeline, 
+        rr_logger, 
+        device=device)
 
     for t in trange(len(data['camera_poses'])):
         camera_pose = data['camera_poses'][t]
@@ -60,20 +78,22 @@ def main(cfg):
         position = camera_pose[:3, 3]
         quat_wxyz = Rotation.from_matrix(rotation_matrix).as_quat(scalar_first=True)
         
-        labels = np.ones(data['depth'][t].shape, dtype=np.uint8)
+        # labels = np.ones(data['depth'][t].shape, dtype=np.uint8)
+        # labels = data['semantic'][t].astype(np.int32)
+        obs = semantic_sensor.predict(Obs(rgb=data['rgb'][t], depth=data['depth'][t]))
 
-        import ipdb; ipdb.set_trace()
-        pipeline.step(t, position, quat_wxyz, data['depth'][t].astype(np.float32), data['semantic'][t], data['rgb'][t])
+        pipeline.step(t, position, quat_wxyz, data['depth'][t].astype(np.float32), obs.semantic.astype(np.int32), data['rgb'][t].astype(np.uint8))
         
         mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
         rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
 
         rr.log(f"{rr_logger.primary_camera_entity}/rgb", rr.Image(data['rgb'][t]).compress(jpeg_quality=95))
-        rr.log(f"{rr_logger.primary_camera_entity}/semantic", rr.SegmentationImage(data['semantic'][t]))
-        rr.log(f"{rr_logger.primary_camera_entity}/instance", rr.SegmentationImage(data['instance'][t]))
+        rr.log(f"{rr_logger.primary_camera_entity}/semantic", rr.SegmentationImage(obs.semantic))
+        rr.log(f"{rr_logger.primary_camera_entity}/instance", rr.SegmentationImage(obs.instance))
         rr.log(f"{rr_logger.primary_camera_entity}/depth", rr.DepthImage(data['depth'][t], meter=1.0))
         rr_logger.log_camera_tf(position, quat_wxyz)
         rr_logger.step()
+    sg_sim.update()
 
 if __name__ == "__main__":
     import argparse

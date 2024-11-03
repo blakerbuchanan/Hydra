@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import click
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 
@@ -39,6 +40,9 @@ from stretch.utils.geometry import angle_difference, xyt_base_to_global
 from stretch.utils.logger import Logger
 from stretch.utils.obj_centric import ObjectCentricObservations, ObjectImage
 from stretch.utils.point_cloud import ransac_transform
+
+from stretch.visualization.rerun import occupancy_map_to_3d_points
+from hydra_python.stretch_ai_utils.utils import cluster_frontiers
 
 logger = Logger(__name__)
 
@@ -710,11 +714,11 @@ class RobotHydraAgent:
             obs = self.robot.get_observation()
             obs = self.semantic_sensor.predict(obs)
             
-        labels = np.ones(obs.depth.shape, dtype=np.uint8)
+        # labels = np.ones(obs.depth.shape, dtype=np.int32)
         timestamp_s = 0
         q_wxyz = R.from_matrix(obs.camera_pose[:3, :3]).as_quat(scalar_first=True)
         
-        self.hydra_pipeline.step(timestamp_s, obs.camera_pose[:3, 3], q_wxyz, obs.depth.astype(np.float32), labels, obs.rgb)
+        self.hydra_pipeline.step(timestamp_s, obs.camera_pose[:3, 3], q_wxyz, obs.depth.astype(np.float32), obs.semantic.astype(np.int32), obs.rgb)
 
     def update_map_loop(self):
         """Threaded function that updates our voxel map in real-time."""
@@ -1628,7 +1632,7 @@ class RobotHydraAgent:
         Args:
             visualize(bool): true if we should do intermediate debug visualizations"""
         self.current_state = "EXPLORE"
-        self.robot.move_to_nav_posture()
+        # self.robot.move_to_nav_posture()
         all_starts = []
         all_goals = []
 
@@ -1762,6 +1766,122 @@ class RobotHydraAgent:
                 print("WARNING: planning to home failed!")
 
         return matches
+    
+    
+    def run_vlm_planner(
+        self,
+        vlm_planner,
+        sg_sim,
+        manual_wait: bool = False,
+        max_planning_steps: int = 3,
+        go_home_at_end: bool = False,
+    ):
+
+        rotated = False
+        succ = False
+        planning_step = 0
+        for i in range(max_planning_steps):
+            click.secho(f"Execution step {i}",fg="blue",)
+
+            
+            start = self.robot.get_base_pose()
+            start_is_valid = self.space.is_valid(start, verbose=True)
+
+            # if start is not valid move backwards a bit
+            if not start_is_valid:
+                click.secho("Start not valid. back up a bit.",fg="red",)
+                ok = self.recover_from_invalid_start()
+                if ok:
+                    start = self.robot.get_base_pose()
+                    start_is_valid = self.space.is_valid(start, verbose=True)
+                    if not self._realtime_updates:
+                        self.update()
+                if not start_is_valid:
+                    click.secho("Failed to recover from invalid start state!",fg="red",)
+                    break
+            
+            self.update_frontiers()
+            if len(self.clustered_frontiers) > 0:
+                sg_sim.update(self.clustered_frontiers)
+            else:
+                click.secho("Empty clustered frontiers. Rotating in place!",fg="yellow",)
+                self.rotate_in_place()
+                continue
+
+            (
+                target_pose, 
+                is_confident, 
+                confidence_level, 
+                answer_output
+            ) = vlm_planner.get_next_action()
+            if target_pose is not None:
+                planning_step += 1
+                if is_confident or confidence_level >= 0.9:
+                    succ = (answer == answer_output)
+                    if succ:
+                        successes += 1
+                        click.secho(f"Success at step{planning_step}",fg="blue",)
+                        click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
+                    else:
+                        click.secho(f"Failure at step {planning_step}",fg="red",)
+                        click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
+                    self.robot._rerun.log_text_data(vlm_planner.full_plan)
+                    break
+                
+                res = self.plan_to_target(start=start, target=target_pose)
+                # if it succeeds, execute a trajectory to this position
+                if res.success:
+                    rotated = False
+                    self.robot._rerun.log_text_data(vlm_planner.full_plan)
+                    click.secho("Plan successful! Executing trajectory",fg="yellow",)
+                    self.robot.execute_trajectory(
+                        [pt.state for pt in res.trajectory],
+                        pos_err_threshold=self.pos_err_threshold,
+                        rot_err_threshold=self.rot_err_threshold,
+                    )
+                else:
+                    click.secho(f"Could not find navigable path: {i}",fg="red",)
+                    continue
+            else:
+                continue
+
+            # Append latest observations
+            if not self._realtime_updates:
+                self.update()
+
+
+            # Error handling
+            if self.robot.last_motion_failed():
+                print("!!!!!!!!!!!!!!!!!!!!!!")
+                print("ROBOT IS STUCK! Move back!")
+                print(f"robot base pose: {self.robot.get_base_pose()}")
+                # Note that this is some random-walk code from habitat sim
+                # This is a terrible idea, do not execute on a real robot
+                # Not yet at least
+                raise RuntimeError("Robot is stuck!")
+
+            if manual_wait:
+                input("... press enter ...")
+
+        if go_home_at_end:
+            self.current_state = "NAV_TO_HOME"
+            # Finally - plan back to (0,0,0)
+            print("Go back to (0, 0, 0) to finish...")
+            start = self.robot.get_base_pose()
+            goal = np.array([0, 0, 0])
+            self.planner.space.push_locations_to_stack(self.get_history(reversed=True))
+            res = self.planner.plan(start, goal)
+            # if it fails, skip; else, execute a trajectory to this position
+            if res.success:
+                print("Full plan to home:")
+                for i, pt in enumerate(res.trajectory):
+                    print("-", i, pt.state)
+                self.robot.execute_trajectory([pt.state for pt in res.trajectory])
+            else:
+                print("WARNING: planning to home failed!")
+
+        return matches
+
 
     def show_voxel_map(self):
         """Show the voxel map in Open3D for debugging."""
@@ -2135,3 +2255,22 @@ class RobotHydraAgent:
         with self._map_lock:
             # Write the new map to the file
             self.voxel_map.write_to_pickle(filename)
+    
+    def update_frontiers(self):
+        # torch.cuda.empty_cache()
+        # gc.collect()
+
+        grid_origin = self.voxel_map.grid_origin
+        grid_resolution = self.voxel_map.grid_resolution
+
+        frontier, outside_frontier, traversible = self.get_frontier()
+        
+        frontier_points = np.array(occupancy_map_to_3d_points(frontier, grid_origin, grid_resolution))
+        outside_frontier_points = np.array(occupancy_map_to_3d_points(outside_frontier, grid_origin, grid_resolution))
+
+        self.clustered_frontiers = cluster_frontiers(
+            frontier_points, 
+            self.parameters["motion_planner"]["frontier"]["min_points_for_clustering"], 
+            self.parameters["motion_planner"]["frontier"]["num_clusters"], 
+            self.parameters["motion_planner"]["frontier"]["cluster_threshold"]
+        )

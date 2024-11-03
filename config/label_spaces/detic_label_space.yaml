@@ -136,7 +136,7 @@ object_labels:
   - 130
 surface_places_labels: []
 label_names:
-  - {label: 0, name: .}
+  - {label: 0, name: unknown}
   - {label: 1, name: action_figure}
   - {label: 2, name: android_figure}
   - {label: 3, name: apple}
