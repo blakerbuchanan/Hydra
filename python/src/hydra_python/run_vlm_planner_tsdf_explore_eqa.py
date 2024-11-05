@@ -130,13 +130,13 @@ def main(cfg):
             vlm_planner = hydra.VLMPLannerEQAGPT(
                 cfg.vlm,
                 sg_sim,
-                questions_data[question_ind], 
+                vlm_question, vlm_pred_candidates, choices, answer, 
                 question_path)
         elif 'gemini' in cfg.vlm.name.lower():
             vlm_planner = hydra.VLMPLannerEQAGemini(
                 cfg.vlm,
                 sg_sim,
-                questions_data[question_ind], 
+                vlm_question, vlm_pred_candidates, choices, answer, 
                 question_path)
         else:
             raise NotImplementedError('VLM planner not implemented.')

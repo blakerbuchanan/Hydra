@@ -1,0 +1,16 @@
+Question0:
+  question: "Is there a trash can in the kitchen?"
+  choices:
+    A: Yes
+    B: No
+  answer: A
+  enrich_labels: "trashcan."
+
+Question1:
+  question: "Where is the toolbox?"
+  choices:
+    A: "Living room"
+    B: "Kitchen"
+    C: "Lobby"
+  answer: B
+  enrich_labels: "toolbox."

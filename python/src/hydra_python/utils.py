@@ -224,8 +224,6 @@ def initialize_hydra_pipeline_rosbag(cfg, camera_info, output_path):
     return pipeline
 
 def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_mapping=None):
-    os.makedirs(output_path, exist_ok=True)
-    output_path = Path(output_path)
 
     # Get camera info
     camera_K = obs.camera_K

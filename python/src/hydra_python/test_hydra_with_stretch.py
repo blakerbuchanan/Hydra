@@ -26,6 +26,11 @@ def main(stretch_parameter_file, hydra_cfg):
 
     # Need to define these arguments
     # Create robot
+
+    os.makedirs(hydra_cfg.output_path, exist_ok=True)
+    output_path = Path(hydra_cfg.output_path)
+
+
     parameters = get_parameters(stretch_parameter_file)
     robot = HomeRobotZmqClient(
         robot_ip=parameters.data['robot_ip'],
@@ -56,22 +61,23 @@ def main(stretch_parameter_file, hydra_cfg):
     hydra_pipeline = initialize_hydra_pipeline_stretch(
         hydra_cfg.hydra, 
         obs, 
-        hydra_cfg.output_path, 
+        output_path,
         sensor_categories_mapping=sensor_categories_mapping
     )
 
     device = f"cuda:{hydra_cfg.gpu}" if torch.cuda.is_available() else "cpu"
     sg_sim = hydra.SceneGraphSim(
         hydra_cfg, 
-        hydra_cfg.output_path, 
+        output_path, 
         hydra_pipeline, 
-        rr_logger, 
+        rr_logger=None, 
         device=device)
 
     agent = RobotHydraAgent(
         robot, 
         parameters, 
         hydra_pipeline, 
+        sg_sim,
         semantic_sensor, 
         enable_realtime_updates=parameters.data['enable_realtime_updates']
     )
@@ -98,25 +104,6 @@ def main(stretch_parameter_file, hydra_cfg):
         visualize=False,
     )
     
-
-
-    # succ = False
-    # while (False == is_confident and succ == True) or step_count != max_steps:
-
-    #     target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
-    #     if target_pose is not None:
-    #         desired_path = [] # path_to_frontier will be voxel planner
-            
-    #         # target pose goes to path planner
-    #         my_stretch.move_robot_and_start_hydra(x, y, theta)
-
-    #     mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(self.pipeline)
-
-    #     # Log to rerun
-    #     rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
-    #     rr_logger.log_camera_tf(step.camera_data.pos, step.camera_data.rot)
-    #     rr_logger.log_rosbag_img_data(step.camera_data)
-    #     rr_logger.step()
 
 
 if __name__ == "__main__":

@@ -66,6 +66,7 @@ class RobotHydraAgent:
         robot: AbstractRobotClient,
         parameters: Union[Parameters, Dict[str, Any]],
         hydra_pipeline,
+        sg_sim,
         semantic_sensor: Optional[OvmmPerception] = None,
         voxel_map: Optional[SparseVoxelMap] = None,
         show_instances_detected: bool = False,
@@ -177,6 +178,7 @@ class RobotHydraAgent:
             )
         
         self.hydra_pipeline = hydra_pipeline
+        self.sg_sim = sg_sim
         self.hydra_update_freq = parameters["hydra_update_freq"]
         self._start_threads()
 
@@ -787,6 +789,8 @@ class RobotHydraAgent:
             t3 = timeit.default_timer()
 
             self.hydra_step(obs)
+            self.update_frontiers()
+            self.sg_sim.update()
 
             if not move_head:
                 break
@@ -849,6 +853,8 @@ class RobotHydraAgent:
             if self.use_scene_graph:
                 self.robot._rerun.update_scene_graph(self.scene_graph, self.semantic_sensor)
             self.robot._rerun.update_hydra_mesh(self.hydra_pipeline)
+            self.robot._rerun.update_frontier(self.clustered_frontiers, self.frontier_points)
+            self.robot._rerun.update_scene_graph_hydra(self.sg_sim)
         else:
             logger.error("No rerun server available!")
 
@@ -1606,6 +1612,18 @@ class RobotHydraAgent:
                             print("Plan failed. Reason:", res.reason)
             return PlanResult(False, reason="no valid plans found")
 
+    def plan_to_target(
+        self,
+        start: np.ndarray,
+        target: np.ndarray,
+    ) -> PlanResult:
+        with self._map_lock:
+            res = self.planner.plan(start, target.cpu().numpy())
+            if res.success:
+                return res
+            else:
+                return PlanResult(False, reason="no valid plans found")
+        
     def get_history(self, reversed: bool = False) -> List[np.ndarray]:
         """Get the history of the robot's positions."""
         history = []
@@ -1767,23 +1785,22 @@ class RobotHydraAgent:
 
         return matches
     
-    
-    def run_vlm_planner(
+    def run_eqa_vlm_planner(
         self,
         vlm_planner,
         sg_sim,
         manual_wait: bool = False,
         max_planning_steps: int = 3,
         go_home_at_end: bool = False,
+        results_filename: Path = None
     ):
-
+        answer = vlm_planner._answer
         rotated = False
         succ = False
         planning_step = 0
         for i in range(max_planning_steps):
             click.secho(f"Execution step {i}",fg="blue",)
 
-            
             start = self.robot.get_base_pose()
             start_is_valid = self.space.is_valid(start, verbose=True)
 
@@ -1802,7 +1819,9 @@ class RobotHydraAgent:
             
             self.update_frontiers()
             if len(self.clustered_frontiers) > 0:
-                sg_sim.update(self.clustered_frontiers)
+                self.sg_sim.update(frontier_nodes=self.clustered_frontiers)
+                if self.robot._rerun and self.update_rerun_every_time:
+                    self.robot._rerun.update_scene_graph_hydra(self.sg_sim)
             else:
                 click.secho("Empty clustered frontiers. Rotating in place!",fg="yellow",)
                 self.rotate_in_place()
@@ -1828,7 +1847,7 @@ class RobotHydraAgent:
                     self.robot._rerun.log_text_data(vlm_planner.full_plan)
                     break
                 
-                res = self.plan_to_target(start=start, target=target_pose)
+                res = self.plan_to_target(start=start, target=target_pose[:2])
                 # if it succeeds, execute a trajectory to this position
                 if res.success:
                     rotated = False
@@ -1879,8 +1898,6 @@ class RobotHydraAgent:
                 self.robot.execute_trajectory([pt.state for pt in res.trajectory])
             else:
                 print("WARNING: planning to home failed!")
-
-        return matches
 
 
     def show_voxel_map(self):
@@ -2263,14 +2280,19 @@ class RobotHydraAgent:
         grid_origin = self.voxel_map.grid_origin
         grid_resolution = self.voxel_map.grid_resolution
 
-        frontier, outside_frontier, traversible = self.get_frontier()
+        frontier, outside_frontier, traversible = self.space.get_frontier()
         
-        frontier_points = np.array(occupancy_map_to_3d_points(frontier, grid_origin, grid_resolution))
+        self.frontier_points = np.array(occupancy_map_to_3d_points(frontier, grid_origin, grid_resolution))
         outside_frontier_points = np.array(occupancy_map_to_3d_points(outside_frontier, grid_origin, grid_resolution))
 
         self.clustered_frontiers = cluster_frontiers(
-            frontier_points, 
+            self.frontier_points, 
             self.parameters["motion_planner"]["frontier"]["min_points_for_clustering"], 
             self.parameters["motion_planner"]["frontier"]["num_clusters"], 
             self.parameters["motion_planner"]["frontier"]["cluster_threshold"]
         )
+        # self.clustered_frontiers = []
+        # for frontier in _clustered_frontiers:
+        #     if self.space.is_valid(frontier, verbose=False):
+        #         self.clustered_frontiers.append(frontier)
+        # self.clustered_frontiers = np.stack(self.clustered_frontiers, axis=0)

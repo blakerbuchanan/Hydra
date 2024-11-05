@@ -1,6 +1,5 @@
 from tqdm import tqdm
 from omegaconf import OmegaConf
-import click
 import os
 from pathlib import Path
 
@@ -14,15 +13,24 @@ from collections import deque
 from tqdm import tqdm
 
 from hydra_python.stretch_ai_utils.robot_hydra_agent import RobotHydraAgent
-from hydra_python.stretch_ai_utils.utils import write_config_yaml, write_to_pickle
-
+from hydra_python.stretch_ai_utils.utils import write_config_yaml, write_to_pickle, load_stretch_questions_data
 
 from stretch.agent.zmq_client import HomeRobotZmqClient
 from stretch.core import get_parameters
 from stretch.perception import create_semantic_sensor
 
-import click
+
 def main(stretch_parameter_file, hydra_cfg):
+
+    os.makedirs(hydra_cfg.output_path, exist_ok=True)
+    output_path = Path(hydra_cfg.output_path)
+
+    results_filename = output_path / f'{hydra_cfg.results_filename}.json'
+
+    questions_data = load_stretch_questions_data(hydra_cfg.data.question_data_path)
+    question_data = questions_data[hydra_cfg.question]
+    vlm_question, vlm_pred_candidates = question_data['vlm_question'], question_data['vlm_pred_candidates']
+    choices, answer, clean_ques_ans, enrich_labels = question_data['choices'], question_data['answer'], question_data['clean_ques_ans'], question_data['enrich_labels']
 
     # Need to define these arguments
     # Create robot
@@ -56,22 +64,26 @@ def main(stretch_parameter_file, hydra_cfg):
     hydra_pipeline = initialize_hydra_pipeline_stretch(
         hydra_cfg.hydra, 
         obs, 
-        hydra_cfg.output_path, 
+        output_path, 
         sensor_categories_mapping=sensor_categories_mapping
     )
 
     device = f"cuda:{hydra_cfg.gpu}" if torch.cuda.is_available() else "cpu"
+
     sg_sim = hydra.SceneGraphSim(
         hydra_cfg, 
-        hydra_cfg.output_path, 
+        output_path, 
         hydra_pipeline, 
-        rr_logger, 
-        device=device)
-
+        rr_logger=None, 
+        device=device, 
+        clean_ques_ans=clean_ques_ans,
+        enrich_object_labels=enrich_labels)
+    
     agent = RobotHydraAgent(
         robot, 
         parameters, 
         hydra_pipeline, 
+        sg_sim,
         semantic_sensor, 
         enable_realtime_updates=parameters.data['enable_realtime_updates']
     )
@@ -92,77 +104,25 @@ def main(stretch_parameter_file, hydra_cfg):
         vlm_planner = hydra.VLMPLannerEQAGPT(
             hydra_cfg.vlm,
             sg_sim,
-            questions_data[question_ind], 
-            question_path)
+            vlm_question, vlm_pred_candidates, choices, answer, 
+            output_path)
     elif 'gemini' in hydra_cfg.vlm.name.lower():
         vlm_planner = hydra.VLMPLannerEQAGemini(
             hydra_cfg.vlm,
             sg_sim,
-            questions_data[question_ind], 
-            question_path)
+            vlm_question, vlm_pred_candidates, choices, answer, 
+            output_path)
     else:
         raise NotImplementedError('VLM planner not implemented.')
-    
 
-    run_vlm_planner(
+    agent.run_eqa_vlm_planner(
+        vlm_planner,
+        sg_sim,
         manual_wait=False,
         max_planning_steps=hydra_cfg.planner.max_planning_steps,
-        go_home_at_end=False
+        go_home_at_end=False,
+        results_filename=results_filename
     )
-    rotated = False
-    succ = False
-    for p_step in range(hydra_cfg.planner.max_planning_steps):
-        click.secho(f"Planning step {p_step}",fg="green",)
-        start = agent.robot.get_base_pose()
-
-        start_is_valid = agent.space.is_valid(start, verbose=True)
-        # if start is not valid move backwards a bit
-        if not start_is_valid:
-            click.secho(f"Start not valid. back up a bit.",fg="yellow",)
-            ok = agent.recover_from_invalid_start()
-            if ok:
-                start = agent.robot.get_base_pose()
-                start_is_valid = agent.space.is_valid(start, verbose=True)
-            if not start_is_valid:
-                click.secho(f"Failed to recover from invalid start state!",fg="red",)
-                break
-        
-        (
-            target_pose, 
-            is_confident, 
-            confidence_level, 
-            answer_output
-        ) = vlm_planner.get_next_action()
-        agent.robot._rerun.log_text_data(vlm_planner.full_plan)
-        if is_confident or confidence_level >= 0.9:
-            succ = (answer == answer_output)
-            if succ:
-                successes += 1
-                click.secho(f"Success at step{p_step}",fg="blue",)
-                click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
-            else:
-                click.secho(f"Failure at step {p_step}=",fg="red",)
-                click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
-            # break # TODO break at confidence or not in cfg
-        else:
-            if target_pose is not None:
-    
-    # succ = False
-
-    #     target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
-    #     if target_pose is not None:
-    #         desired_path = [] # path_to_frontier will be voxel planner
-            
-    #         # target pose goes to path planner
-    #         my_stretch.move_robot_and_start_hydra(x, y, theta)
-
-    #     mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(self.pipeline)
-
-    #     # Log to rerun
-    #     rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
-    #     rr_logger.log_camera_tf(step.camera_data.pos, step.camera_data.rot)
-    #     rr_logger.log_rosbag_img_data(step.camera_data)
-    #     rr_logger.step()
 
 
 if __name__ == "__main__":

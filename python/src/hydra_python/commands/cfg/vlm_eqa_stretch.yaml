@@ -1,15 +1,17 @@
 # General
 seed: 42
+question: 0
 exp_name: test_stretch_hydra
-# exp_name: explore_eqa_${vlm.name}_heirar_gpt4o
+# exp_name: stretch_${vlm.name}_question_${question}
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
-results_filename: ${vlm.name}_images_${vlm.use_image}
+results_filename: ${exp_name}_results
 gpu: 0 
 sim_gpu: 0
 
 data:
   # test_data_path: "/home/saumyas/semnav_workspace/src/stretch_ai/stretch_output_2024-10-29_21-20-00.pkl"
   test_data_path: "/home/saumyas/semnav_workspace/src/hydra/outputs/test_data/data_with_semantics_2024-11-01_20-34-50.pkl"
+  question_data_path: "/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/stretch_ai_utils/cfg/questions.yaml"
 
 logging:
   output_parent_dir: results
@@ -53,26 +55,3 @@ hydra:
   verbosity: 0
   label_space: 'detic'
   config_verbosity: 0
-
-frontier_mapping:
-  tsdf_grid_size: 0.1
-  init_clearance: 0.5
-  img_width: ${habitat.img_width}
-  img_height: ${habitat.img_height}
-  margin_w_ratio: 0.25
-  margin_h_ratio: 0.6
-  height_offset: 0.4
-  range_height: [-0.2, 0.2]
-  visual_prompt:
-    cluster_threshold: 1.0
-    num_clusters: 10
-    num_prompt_points: 3
-    num_max_unoccupied: 300
-    min_points_for_clustering: 3
-    point_min_dist: 1
-    point_max_dist: 10
-    cam_offset: 0.6
-    min_num_prompt_points: 2
-    circle_radius: 18
-    frontier_min_neighbors: 3
-    frontier_max_neighbors: 4

@@ -48,10 +48,10 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
     return PlannerResponse
 
 class VLMPLannerEQAGPT:
-    def __init__(self, cfg, sg_sim, question_data, output_path):
+    def __init__(self, cfg, sg_sim, question, pred_candidates, choices, answer, output_path):
         
-        self._question, self.clean_ques_ans, self.choices, self.vlm_pred_candidates = get_instruction_from_eqa_data(question_data)
-        self._answer = question_data["answer"]
+        self._question, self.choices, self.vlm_pred_candidates = question, choices, pred_candidates
+        self._answer = answer
         self._output_path = output_path
         self._vlm_type = cfg.name
         self._use_image = cfg.use_image

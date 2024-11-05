@@ -33,7 +33,7 @@ class Room_response(BaseModel):
     room: Rooms
 
 class SceneGraphSim:
-    def __init__(self, cfg, output_path, pipeline, rr_logger, device='cpu', clean_ques_ans=' ', enrich_object_labels=None):
+    def __init__(self, cfg, output_path, pipeline, rr_logger=None, device='cpu', clean_ques_ans=' ', enrich_object_labels=None):
         self.sg_cfg = cfg.scene_graph_sim
         self.device = device
         self.enrich_rooms = self.sg_cfg.enrich_rooms
@@ -51,7 +51,6 @@ class SceneGraphSim:
         self.thresh = 2.0
 
         self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
-
 
         if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel
@@ -134,8 +133,9 @@ class SceneGraphSim:
         self._room_ids, self._region_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
 
         # Clear all objects from a specific namespace
-        self.rr_logger.log_clear("world/hydra_graph")
-        self.rr_logger.log_clear("/world/annotations/bb")
+        if self.rr_logger is not None:
+            self.rr_logger.log_clear("world/hydra_graph")
+            self.rr_logger.log_clear("/world/annotations/bb")
 
         ## Adding agent nodes
         agent_ids, agent_cat_ids = [], []
@@ -152,9 +152,12 @@ class SceneGraphSim:
                     attr['layer'] = node.layer
                     attr['timestamp'] = float(node.timestamp/1e8)
                     self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-                    self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
-        self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
-        self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
+                    if self.rr_logger is not None:
+                        self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
+        
+        if len(agent_cat_ids) > 0:
+            self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
+            self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
         
         object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
         self.filtered_obj_positions, self.filtered_obj_ids = [], []
@@ -166,8 +169,8 @@ class SceneGraphSim:
             attr['position'] = list(node.attributes.position)
             attr['name'] = node_name
             attr['layer'] = node.layer
-
-            self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
+            if self.rr_logger is not None:
+                self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
@@ -192,19 +195,19 @@ class SceneGraphSim:
             if 'p' in node.id.category.lower():
                 self._region_node_ids.append(nodeid)
 
-            if 'f' in node.id.category.lower():
-                if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
-                    # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
-                    self._frontier_node_ids.append(nodeid)
-                    # DONT ADD FRONTIER OR PLACE NODES
-                    continue
+            # if 'f' in node.id.category.lower():
+            #     if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
+            #         # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
+            #         self._frontier_node_ids.append(nodeid)
+            #         # DONT ADD FRONTIER OR PLACE NODES
+            #         continue
             
             if 'r' in node.id.category.lower():
                 self._room_ids.append(nodeid)
             
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
-        bb_info = {
+        self.bb_info = {
             'object_node_positions': object_node_positions,
             'bb_half_sizes': bb_half_sizes,
             'bb_centroids': bb_centroids,
@@ -212,8 +215,8 @@ class SceneGraphSim:
             'bb_labels': bb_labels,
             'bb_colors': bb_colors,
         }
-        
-        self.rr_logger.log_bb_data(bb_info)
+        if self.rr_logger is not None:
+            self.rr_logger.log_bb_data(self.bb_info)
         ## Adding edges
         for edge in chain(self.pipeline.graph.edges, self.pipeline.graph.dynamic_interlayer_edges):
             source_node = self.pipeline.graph.get_node(edge.source)
@@ -237,7 +240,8 @@ class SceneGraphSim:
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
             
-            self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
+            if self.rr_logger is not None:
+                self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
             
             self.filtered_netx_graph.add_edges_from([(
                 sourceid, targetid,
@@ -276,7 +280,8 @@ class SceneGraphSim:
                         'target_name': 'object',
                         'type': edge_type}
                     )])
-                    self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
+                    if self.rr_logger is not None:
+                        self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
     def add_room_labels_to_sg(self):
         self._room_names = []

@@ -1,5 +1,12 @@
 from pathlib import Path
 import yaml
+import pickle
+import datetime
+from tqdm import trange
+import numpy as np
+from hydra_python.frontier_mapping_eqa.geom import fps
+from omegaconf import OmegaConf
+
 
 def _format_list(name, values, collapse=True, **kwargs):
     indent = kwargs.get("indent", 0)
@@ -46,10 +53,6 @@ def write_config_yaml(category_mapping):
         for name in output_names:
             fout.write("  - " + yaml.dump(name, default_flow_style=True))
 
-
-import pickle
-import datetime
-from tqdm import trange
 def write_to_pickle(obs_history, filename: str):
     current_datetime = datetime.datetime.now()
     formatted_datetime = current_datetime.strftime("%Y-%m-%d_%H-%M-%S")
@@ -87,8 +90,7 @@ def write_to_pickle(obs_history, filename: str):
     with open(output_pkl_filename, "wb") as f:
         pickle.dump(data, f)
 
-import numpy as np
-from hydra_python.frontier_mapping_eqa.geom import fps
+
 def cluster_frontiers(frontier_points, min_points_for_clustering, num_clusters, cluster_threshold):
     # # cluster, or return none
     if len(frontier_points) < min_points_for_clustering:
@@ -107,3 +109,30 @@ def cluster_frontiers(frontier_points, min_points_for_clustering, num_clusters, 
             if np.min(dist) > cluster_threshold:
                 clusters_new = np.vstack((clusters_new, cluster))
     return clusters_new
+
+def load_stretch_questions_data(filepath):
+    questions_data_file = OmegaConf.load(filepath)
+    OmegaConf.resolve(questions_data_file)
+
+    questions_data = []
+    for k, v in questions_data_file.items():
+        vlm_question = clean_ques_ans = v.question
+        vlm_pred_candidates = v.choices.keys()
+        choices = v.choices.values()
+        for token, choice in zip(vlm_pred_candidates, choices):
+            vlm_question += "\n" + token + "." + " " + choice
+            if ("do not choose" not in choice.lower()) and (choice.lower() not in ['yes', 'no']):
+                clean_ques_ans += "  " + token + "." + " " + choice
+        
+        questions_data.append(
+            {
+                "vlm_question": vlm_question,
+                "clean_ques_ans": clean_ques_ans,
+                "vlm_pred_candidates": vlm_pred_candidates,
+                "choices": choices,
+                "answer": v.answer,
+                "enrich_labels": v.enrich_labels
+
+            }
+        )
+    return questions_data
