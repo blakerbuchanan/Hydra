@@ -1,61 +1,57 @@
 # General
 seed: 42
-exp_name: vlm_sg_stretch_tsdf_random
-output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
-
-vlm:
-  name: 'gpt' # 'gemini'
-  use_image: True
+question: 0
+exp_name: test_stretch_hydra
+# exp_name: stretch_${vlm.name}_question_${question}
+output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
+results_filename: ${exp_name}_results
+gpu: 0 
+sim_gpu: 0
 
 data:
-  question_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/questions.csv'
-  init_pose_data_path: '/home/saumyas/catkin_ws_semnav/src/explore-eqa_semnav/data/scene_init_poses.csv'
-  semantic_annot_data_path: '/mnt/hdd1/saumyas/data/semnav/hm3d-train-semantic-annots-v0.2'
-  scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
+  # test_data_path: "/home/saumyas/semnav_workspace/src/stretch_ai/stretch_output_2024-10-29_21-20-00.pkl"
+  test_data_path: "/home/saumyas/semnav_workspace/src/hydra/outputs/test_data/data_with_semantics_2024-11-01_20-34-50.pkl"
+  question_data_path: "/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/stretch_ai_utils/cfg/questions.yaml"
 
 logging:
   output_parent_dir: results
   save_obs: true
   save_freq: 10
 
+detection:
+  GroundedSAM2:
+    sam2_checkpoint: "/home/saumyas/Projects/semnav/Grounded-SAM-2/checkpoints/sam2.1_hiera_large.pt"
+    model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+scene_graph_sim:
+  enrich_rooms: False
+  enrich_objects: False
+  key_frame_selection:
+    use_clip_for_images: False
+    use_siglip_for_images: False
+    topk: 2
+    visualize_best_image: False
+  detection:
+    detection_model: GroundedSAM2
+    visualize_detections: False
+    return_mask: False
+    min_detection_confidence: 0.75
+  img_subsample_freq: 3
+  
+vlm:
+  name: 'gpt-4o-mini' # 'gemini', 'gpt-4o-mini', 
+  use_image: True
+  use_done_action: False
+  use_history: False
+  early_exit: True
+
 planner:
   max_step_room_size_ratio: 3
   break_at_done: False
-
-habitat:
-  scene_type: 'hm3d'
-  img_width: 640
-  img_height: 480
-  camera_height: 0.7 # 1.5
-  camera_tilt_deg: -15 #-30
-  agent_z_offset: 0.
-  hfov: 120
-  z_offset: 0
-
-
+  max_planning_steps: 30
+  
 hydra:
   glog_level: 0
   verbosity: 0
-  label_space: 'hm3d'
+  label_space: 'detic'
   config_verbosity: 0
-
-frontier_mapping:
-  tsdf_grid_size: 0.1
-  init_clearance: 0.5
-  img_width: ${habitat.img_width}
-  img_height: ${habitat.img_height}
-  margin_w_ratio: 0.25
-  margin_h_ratio: 0.6
-  height_offset: 0.4
-  visual_prompt:
-    cluster_threshold: 1.0
-    num_prompt_points: 3
-    num_max_unoccupied: 300
-    min_points_for_clustering: 3
-    point_min_dist: 2
-    point_max_dist: 10
-    cam_offset: 0.6
-    min_num_prompt_points: 2
-    circle_radius: 18
-    frontier_min_neighbors: 3
-    frontier_max_neighbors: 4

@@ -34,6 +34,16 @@ class RRLogger:
                         origin=self.primary_camera_entity,
                         contents=["$origin/semantic", "/world/annotations/**"],
                 ),
+                rrb.Spatial2DView(
+                        name="Instance Labels",
+                        origin=self.primary_camera_entity,
+                        contents=["$origin/instance", "/world/annotations/**"],
+                ),
+                rrb.Spatial2DView(
+                        name="Depth",
+                        origin=self.primary_camera_entity,
+                        contents=["$origin/depth", "/world/annotations/**"],
+                ),
             ),
             # rrb.Vertical(
             #     rrb.Spatial2DView(
@@ -61,20 +71,33 @@ class RRLogger:
             'object': [225,225,0],
             'frontier': [255,0,0],
             'frontier_selected': [255,255,0],
-            'visited': [0,0,0],
+            'region': [0,0,0],
             'room': [255,0,255],
             'building': [0,255,255],
             'agent': [0,0,255],
         }
+
+        self._node_offset = {
+            'object': 0.,
+            'frontier': 0.,
+            'frontier_selected': 0.,
+            'region': 1.,
+            'room': 2.,
+            'building': 3.,
+            'agent': 0.,
+        }
+
         self._edge_color_map = {
             'building-to-room': [225,0,0],
-            'room-to-visited': [0,255,0],
-            'visited-to-object': [0,0,255],
-            'visited-to-frontier': [255,255,255],
-            'visited-to-visited': [0,0,0],
-            'visited-to-agent': [255,255,0],
+            'room-to-region': [0,255,0],
+            'region-to-object': [0,0,255],
+            'region-to-frontier': [255,255,255],
+            'region-to-region': [0,0,0],
+            'region-to-agent': [255,255,0],
             'frontier-to-object': [255,255,0],
+            'room-to-room': [0,0,0],
         }
+
         self.reset()
 
     def reset(self):
@@ -188,6 +211,14 @@ class RRLogger:
         rr.log(f"{self.primary_camera_entity}/rgb", rr.Image(data.rgb).compress(jpeg_quality=95))
         rr.log(f"{self.primary_camera_entity}/semantic", rr.Image(data.colormap(data.labels)).compress(jpeg_quality=95))
 
+    def log_rosbag_img_data(self, data):
+        # log the camera transform, rgb image, and depth image
+        # rr.log("world/agent", rr.Transform3D(transform=camera_from_world))
+        # rr.log("world/agent", rr.Pinhole(image_from_camera=intrinsic, resolution=[w, h]))
+        rr.log(f"{self.primary_camera_entity}/rgb", rr.Image(np.transpose(data.rgb, axes=(1, 0, 2))).compress(jpeg_quality=95))
+        rr.log(f"{self.primary_camera_entity}/depth", rr.DepthImage(data.depth.T, meter=1.0))
+        rr.log(f"{self.primary_camera_entity}/semantic", rr.SegmentationImage(data.semantic_image[:, :, 0].T))
+
     def log_2d_frontier_data(self, unoccupied, unexplored, tsdf):
         rr.log(f"{self.primary_camera_entity}/unoccupied", rr.Image(unoccupied).compress(jpeg_quality=95))
         rr.log(f"{self.primary_camera_entity}/unexplored", rr.Image(unexplored).compress(jpeg_quality=95))
@@ -295,13 +326,28 @@ class RRLogger:
             ),
         )
     
-    def log_hydra_graph(self, is_node=True, node_type='object', nodeid=None, edgeid=None, edge_type='room_to_place', node_pos_source=None, node_pos_target=None):
+    def log_hydra_graph(
+            self, 
+            is_node=True, 
+            node_type='object', 
+            nodeid=None, 
+            edgeid=None, 
+            edge_type='room-to-place', 
+            node_pos_source=None, 
+            node_pos_target=None):
+
         if is_node:
+            node_pos_source[2] += self._node_offset[node_type]
             rr.log(
                 f"world/hydra_graph/nodes/{node_type}/{nodeid}",
                 rr.Points3D(node_pos_source, colors=self._node_color_map[node_type], radii=0.09)
             )
         else: # edge
+            source_type = edge_type.split('-to-')[0]
+            target_type = edge_type.split('-to-')[1]
+
+            node_pos_source[2] += self._node_offset[source_type]
+            node_pos_target[2] += self._node_offset[target_type]
             rr.log(f"world/hydra_graph/edges/{edge_type}/{edgeid}", rr.Arrows3D(
                 origins=node_pos_source,  # Base position of the arrow
                 vectors=(node_pos_target-node_pos_source),  # Direction and length of the arrow

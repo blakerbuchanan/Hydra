@@ -1,8 +1,13 @@
-import json, time
+import json, time, os
 import numpy as np
 import networkx as nx
 from networkx.readwrite import json_graph
 from itertools import chain
+import torch
+import imageio, cv2
+from PIL import Image
+from hydra_python.utils import project_2d_to_3d
+import rerun as rr
 
 from enum import Enum
 from pydantic import BaseModel
@@ -28,16 +33,58 @@ class Room_response(BaseModel):
     room: Rooms
 
 class SceneGraphSim:
-    def __init__(self, sg_path, pipeline, rr_logger, frontier_nodes, enrich_sg_cfg=False):
-        self._sg_path = sg_path / "filtered_dsg.json"
+    def __init__(self, cfg, output_path, pipeline, rr_logger=None, device='cpu', clean_ques_ans=' ', enrich_object_labels=None):
+        self.sg_cfg = cfg.scene_graph_sim
+        self.device = device
+        self.enrich_rooms = self.sg_cfg.enrich_rooms
+        self.enrich_objects = self.sg_cfg.enrich_objects
+        self.enrich_object_labels = enrich_object_labels
+
+        self.output_path = output_path
+        self._detector_path = output_path / "detector"
+        self._sg_path = output_path / "filtered_dsg.json"
         self.pipeline = pipeline
-        self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
+
+        os.makedirs(self._detector_path, exist_ok=True)
+        
         self.rr_logger = rr_logger
         self.thresh = 2.0
-        self._enrich_room = enrich_sg_cfg.enrich_room
 
-        self.update(frontier_nodes)
-        
+        self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
+
+        if self.sg_cfg.key_frame_selection.use_clip_for_images:
+            from transformers import CLIPProcessor, CLIPModel
+            self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+            self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+            labels = self.enrich_object_labels.replace('.', '')
+            exist = f'There is {labels} in the scene.'
+            self.question_embed = self.processor(text=[clean_ques_ans], return_tensors="pt", padding=True).to(device)
+            self.question_embed_labels = self.processor(text=[labels], return_tensors="pt", padding=True).to(device)
+            self.question_embed_exist = self.processor(text=[exist], return_tensors="pt", padding=True).to(device)
+            self.question_embed = self.question_embed_labels.copy() 
+            self.question_embed['input_ids'] = ((self.question_embed_labels['input_ids']+self.question_embed_exist['input_ids'])/2.0).to(self.question_embed_labels['input_ids'].dtype)
+
+        if self.sg_cfg.key_frame_selection.use_siglip_for_images:
+            from transformers import AutoProcessor, AutoModel
+            self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
+            self.processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
+            labels = self.enrich_object_labels.replace('.', '')
+            exist = f'There is  {labels} in the scene.'
+            self.question_embed = self.processor(text=[clean_ques_ans], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed_labels = self.processor(text=[labels], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed_exist = self.processor(text=[exist], padding="max_length", return_tensors="pt").to(device)
+            self.question_embed = self.question_embed_labels.copy() 
+            self.question_embed['input_ids'] = ((self.question_embed_labels['input_ids']+self.question_embed_exist['input_ids'])/2.0).to(self.question_embed_labels['input_ids'].dtype)
+
+        if self.enrich_objects:
+            self.task_relevant_objects = []
+            detection_kwargs = cfg['detection'][self.sg_cfg.detection.detection_model]
+            if self.sg_cfg.detection.detection_model == 'GroundedSAM2':
+                from hydra_python.detection.grounded_sam2 import GroundedSAM2
+                self._detector = GroundedSAM2(detection_kwargs.sam2_checkpoint, detection_kwargs.model_cfg, device)
+            else:
+                raise NotImplementedError('Dectector not implemented.')
+            
     def _load_scene_graph(self):
         with open(self._sg_path, "r") as f:
             self.scene_graph = json.load(f)
@@ -48,8 +95,16 @@ class SceneGraphSim:
         return json.dumps(nx.node_link_data(self.filtered_netx_graph))
     
     @property
-    def visited_node_ids(self):
-        return self._visited_node_ids
+    def room_node_ids(self):
+        return self._room_ids
+
+    @property
+    def room_node_names(self):
+        return self._room_names
+
+    @property
+    def region_node_ids(self):
+        return self._region_node_ids
     
     @property
     def frontier_node_ids(self):
@@ -75,11 +130,12 @@ class SceneGraphSim:
     def _build_sg_from_hydra_graph(self):
         self.filtered_netx_graph = nx.DiGraph()
 
-        self._room_ids, self._visited_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
+        self._room_ids, self._region_node_ids, self._frontier_node_ids, self._object_node_ids, self._object_node_names = [], [], [], [], []
 
         # Clear all objects from a specific namespace
-        self.rr_logger.log_clear("world/hydra_graph")
-        self.rr_logger.log_clear("/world/annotations/bb")
+        if self.rr_logger is not None:
+            self.rr_logger.log_clear("world/hydra_graph")
+            self.rr_logger.log_clear("/world/annotations/bb")
 
         ## Adding agent nodes
         agent_ids, agent_cat_ids = [], []
@@ -96,9 +152,12 @@ class SceneGraphSim:
                     attr['layer'] = node.layer
                     attr['timestamp'] = float(node.timestamp/1e8)
                     self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
-                    self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
-        self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
-        self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
+                    if self.rr_logger is not None:
+                        self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
+        
+        if len(agent_cat_ids) > 0:
+            self.curr_agent_id = agent_ids[np.argmax(agent_cat_ids)]
+            self.curr_agent_pos = self.get_position_from_id(self.curr_agent_id)
         
         object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
         self.filtered_obj_positions, self.filtered_obj_ids = [], []
@@ -110,8 +169,8 @@ class SceneGraphSim:
             attr['position'] = list(node.attributes.position)
             attr['name'] = node_name
             attr['layer'] = node.layer
-
-            # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=node.attributes.position)
+            if self.rr_logger is not None:
+                self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type=node_type, node_pos_source=np.array(node.attributes.position))
 
             if node.id.category.lower() in ['o', 'r', 'b']:
                 attr['label'] = node.attributes.semantic_label
@@ -134,21 +193,21 @@ class SceneGraphSim:
                 self._object_node_names.append(node_name)
 
             if 'p' in node.id.category.lower():
-                self._visited_node_ids.append(nodeid)
+                self._region_node_ids.append(nodeid)
 
-            if 'f' in node.id.category.lower():
-                if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
-                    # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
-                    self._frontier_node_ids.append(nodeid)
-                    # DONT ADD FRONTIER OR PLACE NODES
-                    continue
+            # if 'f' in node.id.category.lower():
+            #     if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
+            #         # self.rr_logger.log_hydra_graph(is_node=True, nodeid=nodeid, node_type='frontier_selected', node_pos_source=node.attributes.position)
+            #         self._frontier_node_ids.append(nodeid)
+            #         # DONT ADD FRONTIER OR PLACE NODES
+            #         continue
             
             if 'r' in node.id.category.lower():
                 self._room_ids.append(nodeid)
             
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
-        bb_info = {
+        self.bb_info = {
             'object_node_positions': object_node_positions,
             'bb_half_sizes': bb_half_sizes,
             'bb_centroids': bb_centroids,
@@ -156,8 +215,8 @@ class SceneGraphSim:
             'bb_labels': bb_labels,
             'bb_colors': bb_colors,
         }
-        
-        self.rr_logger.log_bb_data(bb_info)
+        if self.rr_logger is not None:
+            self.rr_logger.log_bb_data(self.bb_info)
         ## Adding edges
         for edge in chain(self.pipeline.graph.edges, self.pipeline.graph.dynamic_interlayer_edges):
             source_node = self.pipeline.graph.get_node(edge.source)
@@ -168,21 +227,22 @@ class SceneGraphSim:
             edge_type = f'{source_type}-to-{target_type}'
             edgeid = f'{sourceid}-to-{targetid}'
 
-            # self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=source_node.attributes.position, node_pos_target=target_node.attributes.position)
-
             # Filtering scene graph
             if source_name in self.filter_out_objects or target_name in self.filter_out_objects:
                 continue
             
             # if 'object' in source_type and 'object' in target_type: # Object->Object
             #     continue
-            if 'visited' in source_type and 'visited' in target_type: # Place->Place
+            if 'region' in source_type and 'region' in target_type: # Place->Place
                 continue
             if 'frontier' in source_type or 'frontier' in target_type: # ALL FRONTIERS for now, we add frontiers later
                 continue
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
-
+            
+            if self.rr_logger is not None:
+                self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
+            
             self.filtered_netx_graph.add_edges_from([(
                 sourceid, targetid,
                 {'source_name': source_name,
@@ -190,42 +250,42 @@ class SceneGraphSim:
                 'type': edge_type}
             )])
         
-    
-    
-    def _add_frontier_nodes(self, frontier_nodes):
-        self.filtered_obj_positions = np.array(self.filtered_obj_positions)
-        self.filtered_obj_ids = np.array(self.filtered_obj_ids)
-        self._frontier_node_ids = []
-        for i in range(frontier_nodes.shape[0]):
-            attr={}
-            attr['position'] = list(frontier_nodes[i])
-            attr['name'] = 'frontier'
-            attr['type'] = 'frontier'
-            attr['layer'] = 2
-            nodeid = f'frontier_{i}'
-            self._frontier_node_ids.append(nodeid)
-            self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
+    def update_frontier_nodes(self, frontier_nodes):
+        if len(frontier_nodes)>0:
+            self.filtered_obj_positions = np.array(self.filtered_obj_positions)
+            self.filtered_obj_ids = np.array(self.filtered_obj_ids)
+            self._frontier_node_ids = []
+            for i in range(frontier_nodes.shape[0]):
+                attr={}
+                attr['position'] = list(frontier_nodes[i])
+                attr['name'] = 'frontier'
+                attr['layer'] = 2
+                nodeid = f'frontier_{i}'
+                self._frontier_node_ids.append(nodeid)
+                self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
 
-            dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
-            relevant_objs = dist < self.thresh
-            relevent_node_ids = self.filtered_obj_ids[relevant_objs]
-            relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
+                dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
+                relevant_objs = dist < self.thresh
+                relevent_node_ids = self.filtered_obj_ids[relevant_objs]
+                relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
 
-            edge_type = 'frontier-to-object'
-            
-            for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
-                edgeid = f'{nodeid}-to-{obj_id}'
+                edge_type = 'frontier-to-object'
+                
+                for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
+                    edgeid = f'{nodeid}-to-{obj_id}'
 
-                self.filtered_netx_graph.add_edges_from([(
-                    nodeid, obj_id,
-                    {'source_name': 'frontier',
-                    'target_name': 'object',
-                    'type': edge_type}
-                )])
-                self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
+                    self.filtered_netx_graph.add_edges_from([(
+                        nodeid, obj_id,
+                        {'source_name': 'frontier',
+                        'target_name': 'object',
+                        'type': edge_type}
+                    )])
+                    if self.rr_logger is not None:
+                        self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
-    def _enrich_sg(self):
-        if self._enrich_room:
+    def add_room_labels_to_sg(self):
+        self._room_names = []
+        if len(self._room_ids)>0:
             for room_id in self._room_ids:
                 place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id] # ignore room->room
                 object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
@@ -241,13 +301,46 @@ class SceneGraphSim:
                 )
                 print(f" ======== time for room {room_id} enrichment: {time.time()-start}")
                 self.filtered_netx_graph.nodes[room_id]['name'] = completion.choices[0].message.parsed.room.value
+                self._room_names.append(completion.choices[0].message.parsed.room.value)
+        else:
+            # If no room nodes exist, add room_0 to graph and egdes to regions 
+            self._room_ids = ['room_0']
+            object_names = np.unique([self.filtered_netx_graph.nodes[object_id]['name'] for object_id in self._object_node_ids])
+            start = time.time()
+            completion = client.beta.chat.completions.parse(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "user", "content": f"Given the list of objects: {object_names}. Which room are these objects most likely found in? Keep explanation very brief."}
+                ],
+                response_format=Room_response,
+            )
+            print(f" ======== time for room enrichment: {time.time()-start}")
+
+            # Add node to graph
+            attr={
+                'name': completion.choices[0].message.parsed.room.value,
+                'layer': 4
+            }
+            self.filtered_netx_graph.add_nodes_from([('room_0', attr)])
+            self._room_names.append(completion.choices[0].message.parsed.room.value)
+
+            # Add edges from room to region
+            edge_type = 'room-to-region'
+            for reg_id in self._region_node_ids:
+                self.filtered_netx_graph.add_edges_from([(
+                    'room_0', reg_id,
+                    {'source_name': 'room',
+                    'target_name': 'region',
+                    'type': edge_type}
+                )])
+
 
     def _get_node_properties(self, node):
         # print(f"layer: {node.layer}. Category: {node.id.category.lower()}{node.id.category_id}. Active Frontier: {node.attributes.active_frontier}")
         if 'p' in node.id.category.lower():
-            nodeid = f'visited_{node.id.category_id}'
-            node_type = 'visited'
-            node_name = 'visited'
+            nodeid = f'region_{node.id.category_id}'
+            node_type = 'region'
+            node_name = 'region'
         if 'f' in node.id.category.lower(): 
             nodeid = f'frontier_{node.id.category_id}'
             node_type = 'frontier'
@@ -419,12 +512,111 @@ class SceneGraphSim:
                 room_str = f' at room node: {room_id[0]} with name {room_name}'
         return f'{agent_loc_str} {room_str}'
     
-    def update(self, frontier_nodes=None):
+    def update(self, imgs_rgb=[], imgs_depth=None, intrinsics=None, extrinsics=None, save_image=False, frontier_nodes=[]):
         # self._load_scene_graph()
         # self.test_sg()
         self._build_sg_from_hydra_graph()
-        self._add_frontier_nodes(frontier_nodes)
-        self._enrich_sg()
+        self.update_frontier_nodes(frontier_nodes)
+        self.save_best_image(imgs_rgb, save_image)
+
+        if self.enrich_rooms:
+            self.add_room_labels_to_sg()
+
+        if self.enrich_objects:
+            results, masks_batch, rgb_images_list, depth_list, extrinsics_list = self.detect_task_relevant_objects(imgs_rgb, imgs_depth, extrinsics)
+            self.update_objects_in_sg(results, masks_batch, depth_list, extrinsics_list, intrinsics)
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])
+    
+    def detect_task_relevant_objects(self, imgs_rgb, imgs_depth, extrinsics):
+        subsampled_imgs = imgs_rgb[::self.sg_cfg.img_subsample_freq]
+        subsampled_depth = imgs_depth[::self.sg_cfg.img_subsample_freq]
+        subsampled_extrinsics = extrinsics[::self.sg_cfg.img_subsample_freq]
+        return self._detector.predict(
+            subsampled_imgs, 
+            subsampled_depth,
+            subsampled_extrinsics,
+            [self.enrich_object_labels]*len(subsampled_imgs), 
+            self._detector_path, 
+            return_mask=self.sg_cfg.detection.return_mask,
+            visualize=self.sg_cfg.detection.visualize_detections)
+
+    def update_objects_in_sg(self, results, masks_batch, depth_list, extrinsics_list, intrinsics):
+        for idx in range(len(results)):
+            depth_img = depth_list[idx]
+            extrinsics = extrinsics_list[idx]
+            result = results[idx]
+            for j in range(len(result["boxes"])):
+                if result["scores"].cpu().numpy()[j] > self.sg_cfg.min_detection_confidence:
+                    points_3d = project_2d_to_3d((result["boxes"].cpu().numpy()[j]).astype(int), depth_img, intrinsics, extrinsics)
+                    centroid = np.sum(points_3d, axis=0)/4
+                    self.task_relevant_objects.append({'pos': centroid, 'label': result['labels'][j], 'confidence': result["scores"].cpu().numpy()[j]})
+                    print("=============found object")
+                    
+        # Remove points too close by
+        self.task_relevant_objects = self.remove_close_positions(self.task_relevant_objects, threshold=0.3)
+        rr.log(f"world/task_relevant_objects", rr.Points3D([x['pos'] for x in self.task_relevant_objects], colors=[255, 0, 0], radii=0.11))
+
+    def save_best_image(self, imgs_rgb, save_image):
+
+        if len(imgs_rgb)>0 and save_image and (self.sg_cfg.key_frame_selection.use_clip_for_images or self.sg_cfg.key_frame_selection.use_siglip_for_images):
+            start = time.time()
+
+            imgs_rgb = np.array(imgs_rgb)
+            w, h = imgs_rgb[0].shape[0], imgs_rgb[0].shape[1]
+            # Remove black images
+            black_pixels_mask = np.all(imgs_rgb == 0, axis=-1)
+            num_black_pixels = np.sum(black_pixels_mask, axis=(1, 2))
+            useful_img_idxs = num_black_pixels < 0.3*w*h
+            useful_imgs = imgs_rgb[useful_img_idxs]
+            sampled_images = useful_imgs[::self.sg_cfg.img_subsample_freq]
+
+            padding = True if self.sg_cfg.key_frame_selection.use_clip_for_images else "max_length" # HuggingFace says SigLIP was trained on "max_length"
+            imgs_embed = self.processor(images=sampled_images, return_tensors="pt", padding=padding).to(self.device)
+            with torch.no_grad():
+                outputs = self.model(**self.question_embed_labels, **imgs_embed)
+            logits_per_text = outputs.logits_per_image # this is the image-text similarity score
+            probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities
+    
+            probs, logits_per_text = probs.detach().cpu().numpy(), logits_per_text.squeeze().detach().cpu().numpy()
+            best = np.argmax(probs)
+            top_k_indices = np.argsort(probs)[::-1][:self.sg_cfg.key_frame_selection.topk]
+
+            if self.sg_cfg.key_frame_selection.visualize_best_image:
+                labeled_frames = []
+                for idx in range(len(sampled_images)):
+                    color_img = sampled_images[idx].copy()
+                    label = f'{probs[idx]:.2f}'
+                    if idx in top_k_indices:
+                        label = label + f'_best{np.where(top_k_indices==idx)[0][0]}'
+                    cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
+                    labeled_frames.append(color_img)
+
+                imageio.mimsave(self.output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
+
+            if save_image:
+                curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
+                curr_img.save(self.output_path / "current_img.png")
+            print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
+
+    def remove_close_positions(self, data, threshold):
+        # Sort the list by confidence in descending order
+        data_sorted = sorted(data, key=lambda x: x['confidence'], reverse=True)
+
+        result = []
+        for i, current in enumerate(data_sorted):
+            # Check if current position is too close to any already included points
+            too_close = False
+            for chosen in result:
+                # Compute the distance between positions
+                distance = np.linalg.norm(np.array(current['pos']) - np.array(chosen['pos']))
+                if distance < threshold:
+                    too_close = True
+                    break
+            
+            # Only keep if not too close to any already selected points
+            if not too_close:
+                result.append(current)
+
+        return result

@@ -10,6 +10,7 @@ import threading, time
 from PIL import Image
 from scipy.special import softmax
 import threading
+from hydra_python.utils import hydra_get_mesh
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -33,73 +34,6 @@ class ImageVisualizer:
                 self._view.setPredefinedGradient("viridis")
         else:
             self._view.setImage(image, **kwargs)
-
-def hydra_get_mesh(pipeline):
-    vertices = pipeline.graph.mesh.get_vertices()
-    faces = pipeline.graph.mesh.get_faces()
-
-    mesh_vertices = vertices[:3, :].T
-    mesh_triangles = faces.T
-    mesh_colors = vertices[3:, :].T
-
-    return mesh_vertices, mesh_colors, mesh_triangles
-
-def hydra_get_object_place_nodes(pipeline):
-
-    place_node_positions = []
-    frontier_node_positions = []
-    room_node_positions = []
-    building_node_positions = []
-
-    object_node_positions, bb_half_sizes, bb_centroids, bb_mat3x3, bb_labels, bb_colors = [], [], [], [], [], []
-
-    for node in pipeline.graph.nodes:
-        if 'p' in node.id.category.lower():
-            place_node_positions.append(node.attributes.position)
-        if 'f' in node.id.category.lower():
-            frontier_node_positions.append(node.attributes.position)
-        if 'o' in node.id.category.lower():
-            object_node_positions.append(node.attributes.position)
-
-            # log the bounding boxes
-            bbox = node.attributes.bounding_box
-
-            bb_half_sizes.append(0.5 * bbox.dimensions)
-            bb_centroids.append(bbox.world_P_center)
-            bb_mat3x3.append(bbox.world_R_center)
-            bb_labels.append(node.attributes.name)
-            bb_colors.append(node.attributes.color)
-
-        if 'r' in node.id.category.lower():
-            room_node_positions.append(node.attributes.position)
-        if 'b' in node.id.category.lower():
-            building_node_positions.append(node.attributes.position)
-
-    node_info = {
-        'place_node_positions': place_node_positions,
-        'frontier_node_positions': frontier_node_positions,
-        'room_node_positions': room_node_positions,
-        'building_node_positions': building_node_positions,
-        'object_node_info': {
-            'object_node_positions': object_node_positions,
-            'bb_half_sizes': bb_half_sizes,
-            'bb_centroids': bb_centroids,
-            'bb_mat3x3': bb_mat3x3,
-            'bb_labels': bb_labels,
-            'bb_colors': bb_colors,
-        }
-
-    }
-    return node_info
-
-# def get_in_plane_frontier_nodes(frontier_node_positions, agent_pos):
-#     if len(frontier_node_positions)>0:
-#         inplace_idxs = is_relevant_frontier(np.array(frontier_node_positions), agent_pos)
-#         inplane_frontier_node_positions = np.array(frontier_node_positions)[inplace_idxs]
-#         return inplane_frontier_node_positions
-#     else:
-#         return []
-
 
 def hydra_output_callback(pipeline, visualizer):
     """Show graph."""
@@ -215,7 +149,7 @@ def run(
 
     #rr.shutdown()
 
-
+import os
 def run_eqa(
     pipeline,
     habitat_data,
@@ -224,17 +158,17 @@ def run_eqa(
     step_callback=hydra_output_callback,
     output_path=None,
     rr_logger=None,
-    vlm_planner=None,
+    sg_sim=None,
     tsdf_planner=None,
     voxel_space=None,
     save_image=False
 ):
 
     agent_positions, agent_quats_wxyz = [], []
-    imgs_rgb= []
+    imgs_rgb, imgs_depth, extrinsics = [], [], []
     step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
-    clip_logits = []
-
+    # idx=0
+    os.makedirs(output_path/'traj0', exist_ok=True)
     for pose in pose_source:
         pipeline.graph.save(output_path / "dsg.json", False)
         pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
@@ -242,6 +176,7 @@ def run_eqa(
         start = time.time()
         _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
         imgs_rgb.append(habitat_data.rgb)
+        imgs_depth.append(habitat_data.depth)
         step_time += time.time()-start
 
         agent_pos, agent_quat_wxyz = habitat_data.get_state(is_eqa=True)
@@ -251,7 +186,12 @@ def run_eqa(
         mesh_vertices, mesh_colors, mesh_triangles = hydra_get_mesh(pipeline)
 
         cam_pose_tsdf = get_cam_pose_tsdf(habitat_data.get_depth_sensor_state())
+        extrinsics.append(cam_pose_tsdf)
         pts_normal = pos_habitat_to_normal(pose[1])
+
+        # img = Image.fromarray(habitat_data.rgb)
+        # img.save(output_path/'traj0'/ f"img_{idx}.png")
+        # idx+=1
 
         if tsdf_planner:
             tsdf_planner.update(
@@ -263,7 +203,6 @@ def run_eqa(
             frontier_nodes = tsdf_planner.frontier_to_sample_normal
             
         if voxel_space:
-            start = time.time()
             # cam_pose_tsdf[2,3]=0
             obs = Observations(
                 gps=pts_normal[:2],
@@ -275,19 +214,13 @@ def run_eqa(
                 camera_K=voxel_space.cam_intr,
             )
             voxel_space.voxel_map.add_obs(obs)
-            frontier_update_time += time.time()-start
-
-            # start = time.time()
             # voxel_space.update(z=agent_pos[2])
-            # voxel_log_time += time.time()-start
-
             # frontier_nodes = voxel_space.outside_frontier_points
-
-        # if vlm_planner:
-        #     start = time.time()
-        #     vlm_planner.sg_sim.update(frontier_nodes)
-        #     sg_update_time += time.time()-start
-
+        
+        # if sg_sim:
+        #     # Should be done after saving default image cos this update overwrites it
+        #     sg_sim.update(imgs_rgb, imgs_depth, habitat_data.intrinsics, extrinsics, save_image=save_image, frontier_nodes=frontier_nodes)
+    
         if rr_logger:
             start = time.time()
             rr_logger.log_mesh_data(mesh_vertices, mesh_colors, mesh_triangles)
@@ -303,52 +236,25 @@ def run_eqa(
 
         if step_callback:
             step_callback(pipeline, None)
-    
     if voxel_space:
-        start = time.time()   
         voxel_space.update(z=agent_pos[2])
         frontier_nodes = voxel_space.clustered_frontiers
-        voxel_log_time += time.time()-start
-    
-    if vlm_planner:
-        start = time.time()
-        vlm_planner.sg_sim.update(frontier_nodes)
-        sg_update_time += time.time()-start
-    print(f"{step_time=} {frontier_update_time=} {voxel_log_time=} {sg_update_time=} {mesh_log_time=}")
 
     if save_image:
         curr_img = Image.fromarray(habitat_data.rgb)
         curr_img.save(output_path / "current_img.png")
+
+    if sg_sim:
+        # Should be done after saving default image cos this update overwrites it
+        sg_sim.update(
+            imgs_rgb=imgs_rgb, 
+            imgs_depth=imgs_depth, 
+            intrinsics=habitat_data.intrinsics, 
+            extrinsics=extrinsics, 
+            save_image=save_image, 
+            frontier_nodes=frontier_nodes)
     
+    print(f"{step_time=} {frontier_update_time=} {mesh_log_time=}")
 
-    if habitat_data._get_siglip_embeddings or habitat_data.get_clip_embeddings:
-        start = time.time()
-        probs, logits = habitat_data.calc_similarity_score(imgs_rgb)
-        imgs = np.array(imgs_rgb[::habitat_data._img_subsample_freq])
-    
-        # Remove black images
-        w, h = imgs[0].shape[0], imgs[0].shape[1]
-        black_pixels_mask = np.all(imgs == 0, axis=-1)
-        num_black_pixels = np.sum(black_pixels_mask, axis=(1, 2))
-        useful_img_idxs = num_black_pixels < 0.3*w*h
-        useful_imgs = imgs[useful_img_idxs]
-        useful_logits = logits[useful_img_idxs]
-        probs = softmax(np.array(useful_logits))
-        best = np.argmax(probs)
 
-        # labeled_frames = []
-        # for idx in range(len(useful_imgs)):
-        #     color_img = useful_imgs[idx].copy()
-        #     label = f'{probs[idx]:.2f}'
-        #     if idx == best:
-        #         label = label + '_best'
-        #     cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
-        #     labeled_frames.append(color_img)
 
-        # imageio.mimsave(output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
-        # import ipdb; ipdb.set_trace()
-
-        if save_image:
-            curr_img = Image.fromarray(useful_imgs[best])
-            curr_img.save(output_path / "current_img.png")
-        print(f"===========time taken for SigLIP emb: {time.time()-start}")

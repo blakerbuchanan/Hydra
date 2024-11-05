@@ -14,14 +14,6 @@ import yaml
 
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
-from transformers import CLIPProcessor, CLIPModel
-from transformers import AutoProcessor, AutoModel
-import torch
-
-# Check if CUDA is available and set the device accordingly
-device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-torch.cuda.empty_cache()
-torch.cuda.set_device(1)
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -97,7 +89,7 @@ def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, camera_height=0.
     return spec
 
 
-def _make_habitat_config(scene, scene_type='mp3d', camera_height=0.0, width=640, height=360, agent_z_offset=0.0, agent_radius=0.1, hfov=90.0):
+def _make_habitat_config(scene, scene_type='mp3d', camera_height=0.0, width=640, height=360, agent_z_offset=0.0, agent_radius=0.1, hfov=90.0, sim_gpu=0):
     sim_cfg = habitat_sim.SimulatorConfiguration()
     path = scene.parent.parent
     if scene_type=='mp3d':
@@ -108,7 +100,7 @@ def _make_habitat_config(scene, scene_type='mp3d', camera_height=0.0, width=640,
         raise NotImplementedError('scene type not implemented.')
 
     sim_cfg.scene_dataset_config_file = str(json_path)
-    sim_cfg.gpu_device_id = 0
+    sim_cfg.gpu_device_id = sim_gpu
     sim_cfg.scene_id = str(scene)
     sim_cfg.enable_physics = True
     sim_cfg.allow_sliding = False
@@ -252,82 +244,49 @@ class HabitatInterface:
     def __init__(
             self, 
             scene: Union[str, pathlib.Path], 
-            scene_type: str='mp3d',
-            inflation_radius=0.25,
-            camera_height=0.0, 
-            width=640, 
-            height=360,
-            agent_z_offset=0.0,
-            hfov=90.0,
-            z_offset=0.5,
-            camera_tilt=0,
-            get_clip_embeddings=False,
-            get_siglip_embeddings=False,
-            img_subsample_freq=1):
+            cfg,
+            device='cpu',):
         
         """Initialize the simulator."""
         scene = pathlib.Path(scene).expanduser().resolve()
-        self._scene_type = scene_type
-        self.inflation_radius = inflation_radius
-        self.z_offset = z_offset
-        self._camera_tilt = camera_tilt
-        self.question = ' '
-        self._get_clip_embeddings = get_clip_embeddings
-        self._get_siglip_embeddings = get_siglip_embeddings
-        self._img_subsample_freq = img_subsample_freq
+        self._scene_type = cfg.scene_type
+        self.inflation_radius = cfg.inflation_radius
+        self.z_offset = cfg.z_offset
+        self._camera_tilt = cfg.camera_tilt_deg*np.pi/180
+        self._device = device
 
         # TODO(nathan) expose some of this via the data interface
         _set_logging()
         config, camera_info = _make_habitat_config(
             scene, 
-            scene_type=scene_type, 
-            camera_height=camera_height,
-            width=width, 
-            height=height,
-            agent_z_offset=agent_z_offset, 
+            scene_type=cfg.scene_type, 
+            camera_height=cfg.camera_height,
+            width=cfg.img_width, 
+            height=cfg.img_height,
+            agent_z_offset=cfg.agent_z_offset, 
             agent_radius=0.1, 
-            hfov=hfov)
+            hfov=cfg.hfov,
+            sim_gpu=cfg.sim_gpu)
         self._house_path = scene.parent / f"{scene.stem}.house"
         self._camera_info = camera_info
-        
+        self.intrinsics = np.array([
+            [camera_info['fx'], 0, camera_info['cx']],
+            [0, camera_info['fy'], camera_info['cy']],
+            [0, 0, 1]
+        ])
+
         self._sim = habitat_sim.Simulator(config)
         
-        if scene_type=='mp3d':
+        if cfg.scene_type=='mp3d':
             self._make_instance_labelmap_mp3d()
-        if scene_type=='hm3d':
+        if cfg.scene_type=='hm3d':
             self._make_instance_labelmap_hm3d()
             # self._write_config_yaml()
 
         self._obs = None
         self._labels = None
 
-        if get_clip_embeddings:
-            self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
-            self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-            self.question_embed = self.processor(text=[self.question], return_tensors="pt", padding=True).to(device)
-
-        if get_siglip_embeddings:
-            self.model = AutoModel.from_pretrained("google/siglip-base-patch16-224").to(device)
-            self.processor = AutoProcessor.from_pretrained("google/siglip-base-patch16-224")
-            self.question_embed = self.processor(text=[self.question], padding="max_length", return_tensors="pt").to(device)
-
-        self._make_navgraph(inflation_radius=inflation_radius)
-
-    def update_question(self, question):
-        self.question = question
-        if self._get_clip_embeddings:
-            self.question_embed = self.processor(text=[question], return_tensors="pt", padding=True).to(device)
-        if self._get_siglip_embeddings:
-            self.question_embed = self.processor(text=[question], return_tensors="pt", padding="max_length").to(device)
-
-    def calc_similarity_score(self, images):
-        padding = True if self._get_clip_embeddings else "max_length" # HuggingFace says SigLIP was trained on "max_length"
-        imgs_embed = self.processor(images=images[::self._img_subsample_freq], return_tensors="pt", padding=padding).to(device)
-        with torch.no_grad():
-            outputs = self.model(**self.question_embed, **imgs_embed)
-        logits_per_text = outputs.logits_per_image # this is the image-text similarity score
-        probs = logits_per_text.softmax(dim=0).squeeze() # we can take the softmax to get the label probabilities
-        return probs.detach().cpu().numpy(), logits_per_text.squeeze().detach().cpu().numpy()
+        self._make_navgraph(inflation_radius=cfg.inflation_radius)
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {
@@ -363,7 +322,7 @@ class HabitatInterface:
         }
 
         category_map = np.array(list(object_to_cat_map.values()))
-        self._labelmap = hydra.LabelConverter(category_map)
+        self._labelmap = hydra.LabelConverter(category_map) # instance idx to category idx
 
         name_mapping = {}
         for c in self._sim.semantic_scene.categories:
