@@ -8,9 +8,10 @@ from copy import deepcopy
 
 import numpy as np
 import hydra_python as hydra
+from hydra_python.run import run_eqa
 from hydra_python._plugins import habitat
 from hydra_python import RRLogger
-from hydra_python import TSDFPlanner
+from hydra_python.frontier_mapping_eqa.tsdf import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
@@ -115,7 +116,7 @@ def main(cfg):
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
         # Get scene graph for init view
-        hydra.run_eqa(
+        run_eqa(
             pipeline,
             habitat_data,
             poses,
@@ -188,7 +189,7 @@ def main(cfg):
                     poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
                     if poses is not None:
                         click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)
-                        hydra.run_eqa(
+                        run_eqa(
                             pipeline,
                             habitat_data,
                             poses,
