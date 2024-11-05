@@ -6,9 +6,10 @@ from pathlib import Path
 
 import numpy as np
 import hydra_python as hydra
+from hydra_python.run import run_eqa
 from hydra_python._plugins import habitat
 from hydra_python import RRLogger
-from hydra_python import TSDFPlanner
+from hydra_python.frontier_mapping_eqa.tsdf import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
@@ -29,7 +30,7 @@ def main(cfg):
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in np.arange(11):
+        if question_ind in np.arange(2):
             continue
         question_data = questions_data[question_ind]
         
@@ -85,7 +86,7 @@ def main(cfg):
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
         # Get scene graph for init view
-        hydra.run_eqa(
+        run_eqa(
             pipeline,
             habitat_data,
             poses,
@@ -135,7 +136,7 @@ def main(cfg):
 
             poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
             click.secho(f"Executing trajectory: {i}",fg="yellow",)
-            hydra.run_eqa(
+            run_eqa(
                 pipeline,
                 habitat_data,
                 poses,
