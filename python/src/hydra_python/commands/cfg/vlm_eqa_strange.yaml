@@ -1,6 +1,6 @@
 # General
 seed: 42
-exp_name: test_mr
+exp_name: test_obj_enrich
 # exp_name: explore_eqa_${vlm.name}_heirar_gpt4o
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
@@ -26,16 +26,16 @@ detection:
 
 scene_graph_sim:
   save_image: ${vlm.use_image}
-  enrich_rooms: True
-  enrich_objects: False
+  enrich_rooms: False
+  enrich_objects: True
   key_frame_selection:
     use_clip_for_images: False
-    use_siglip_for_images: True
+    use_siglip_for_images: False
     topk: 2
-    visualize_best_image: True
+    visualize_best_image: False
   detection:
     detection_model: GroundedSAM2
-    visualize_detections: False
+    visualize_detections: True
     return_mask: False
     min_detection_confidence: 0.75
   img_subsample_freq: 3

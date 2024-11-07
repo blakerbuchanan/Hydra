@@ -30,7 +30,7 @@ def main(cfg):
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in np.arange(2):
+        if question_ind in np.arange(7):
             continue
         question_data = questions_data[question_ind]
         
@@ -101,13 +101,6 @@ def main(cfg):
         graph_nodes = np.array([habitat_data.G.nodes[n]["pos"] for n in habitat_data.G]).squeeze()
         positions_navmesh = np.array([pos_habitat_to_normal(p) for p in graph_nodes])
         rr_logger.log_navmesh_data(positions_navmesh)
-
-        # vlm_planner = hydra.VLMPLannerEQA(
-        #     cfg.vlm,
-        #     sg_sim,
-        #     questions_data[question_ind], 
-        #     question_path)
-        
         
         click.secho(f"Question:\n{vlm_question} \n Answer: {answer}",fg="green",)
 
@@ -147,6 +140,7 @@ def main(cfg):
                 save_image=cfg.vlm.use_image,
             )
             # bb = hydra.get_bb_from_sem(habitat_data)
+            import ipdb; ipdb.set_trace()
         pipeline.save()
 
 if __name__ == "__main__":
