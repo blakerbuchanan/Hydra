@@ -597,11 +597,15 @@ class SceneGraphSim:
                     cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
                     labeled_frames.append(color_img)
 
-                imageio.mimsave(self.output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
+                idx = 0
+                while (self.output_path / f'images_with_clip_probs_{idx}.gif').exists():
+                    idx += 1
+                imageio.mimsave(self.output_path / f'images_with_clip_probs_{idx}.gif', labeled_frames, fps=0.5)
 
             if self.save_image:
-                curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
-                curr_img.save(self.output_path / "current_img.png")
+                #curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
+                curr_img = Image.fromarray(sampled_images[top_k_indices])
+                curr_img.save(self.output_path / f"current_img_{idx}.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
 
     def remove_close_positions(self, data, threshold):
