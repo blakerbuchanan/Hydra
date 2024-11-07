@@ -22,8 +22,9 @@ from stretch.perception import create_semantic_sensor
 
 def main(stretch_parameter_file, hydra_cfg):
 
-    os.makedirs(hydra_cfg.output_path, exist_ok=True)
-    output_path = Path(hydra_cfg.output_path)
+    output_path = hydra.resolve_output_path(Path(hydra_cfg.output_path))
+    os.makedirs(output_path, exist_ok=True)
+    # output_path = Path(hydra_cfg.output_path)
 
     results_filename = output_path / f'{hydra_cfg.results_filename}.json'
 
@@ -38,6 +39,7 @@ def main(stretch_parameter_file, hydra_cfg):
     robot = HomeRobotZmqClient(
         robot_ip=parameters.data['robot_ip'],
         use_remote_computer=True,
+        output_path=output_path,
         parameters=parameters,
         enable_rerun_server=parameters.data['enable_rerun_server'],
         publish_observations=parameters.data['enable_realtime_updates'],
@@ -78,13 +80,14 @@ def main(stretch_parameter_file, hydra_cfg):
         device=device, 
         clean_ques_ans=clean_ques_ans,
         enrich_object_labels=enrich_labels)
-    
+
     agent = RobotHydraAgent(
         robot, 
         parameters, 
         hydra_pipeline, 
         sg_sim,
-        semantic_sensor, 
+        semantic_sensor=semantic_sensor, 
+        output_path=output_path,
         enable_realtime_updates=parameters.data['enable_realtime_updates']
     )
     agent.start()

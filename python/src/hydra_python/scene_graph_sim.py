@@ -8,6 +8,7 @@ import imageio, cv2
 from PIL import Image
 from hydra_python.utils import project_2d_to_3d
 import rerun as rr
+import click
 
 from enum import Enum
 from pydantic import BaseModel
@@ -27,7 +28,11 @@ class Rooms(str, Enum):
     study = "study room"
     staircase = "staircase"
     porch = "porch"
-    
+    laboratory = "laboratory"
+    office = "office"
+    workshop = "workshop"
+    garage = "garage"
+
 class Room_response(BaseModel):
     explanation: str
     room: Rooms
@@ -40,6 +45,7 @@ class SceneGraphSim:
         self.enrich_objects = self.sg_cfg.enrich_objects
         self.enrich_object_labels = enrich_object_labels
 
+        self.save_image = self.sg_cfg.save_image
         self.output_path = output_path
         self._detector_path = output_path / "detector"
         self._sg_path = output_path / "filtered_dsg.json"
@@ -136,8 +142,7 @@ class SceneGraphSim:
         if self.rr_logger is not None:
             self.rr_logger.log_clear("world/hydra_graph")
             self.rr_logger.log_clear("/world/annotations/bb")
-
-        ## Adding agent nodes
+        
         agent_ids, agent_cat_ids = [], []
         for layer in self.pipeline.graph.dynamic_layers:
             for node in layer.nodes:
@@ -512,12 +517,12 @@ class SceneGraphSim:
                 room_str = f' at room node: {room_id[0]} with name {room_name}'
         return f'{agent_loc_str} {room_str}'
     
-    def update(self, imgs_rgb=[], imgs_depth=None, intrinsics=None, extrinsics=None, save_image=False, frontier_nodes=[]):
+    def update(self, imgs_rgb=[], imgs_depth=None, intrinsics=None, extrinsics=None, frontier_nodes=[]):
         # self._load_scene_graph()
         # self.test_sg()
         self._build_sg_from_hydra_graph()
         self.update_frontier_nodes(frontier_nodes)
-        self.save_best_image(imgs_rgb, save_image)
+        self.save_best_image(imgs_rgb)
 
         if self.enrich_rooms:
             self.add_room_labels_to_sg()
@@ -558,11 +563,10 @@ class SceneGraphSim:
         self.task_relevant_objects = self.remove_close_positions(self.task_relevant_objects, threshold=0.3)
         rr.log(f"world/task_relevant_objects", rr.Points3D([x['pos'] for x in self.task_relevant_objects], colors=[255, 0, 0], radii=0.11))
 
-    def save_best_image(self, imgs_rgb, save_image):
+    def save_best_image(self, imgs_rgb):
 
-        if len(imgs_rgb)>0 and save_image and (self.sg_cfg.key_frame_selection.use_clip_for_images or self.sg_cfg.key_frame_selection.use_siglip_for_images):
+        if len(imgs_rgb)>0 and self.save_image and (self.sg_cfg.key_frame_selection.use_clip_for_images or self.sg_cfg.key_frame_selection.use_siglip_for_images):
             start = time.time()
-
             imgs_rgb = np.array(imgs_rgb)
             w, h = imgs_rgb[0].shape[0], imgs_rgb[0].shape[1]
             # Remove black images
@@ -595,7 +599,7 @@ class SceneGraphSim:
 
                 imageio.mimsave(self.output_path / f'images_with_clip_probs.gif', labeled_frames, fps=0.5)
 
-            if save_image:
+            if self.save_image:
                 curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
                 curr_img.save(self.output_path / "current_img.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")

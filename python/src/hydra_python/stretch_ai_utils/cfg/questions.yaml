@@ -1,16 +1,15 @@
 Question0:
-  question: "Is there a trash can in the kitchen?"
+  question: "Is there a trash can in the room?"
   choices:
-    A: Yes
-    B: No
+    A: 'Yes'
+    B: 'No'
   answer: A
-  enrich_labels: "trashcan."
+  enrich_labels: "trach can."
 
 Question1:
-  question: "Where is the toolbox?"
+  question: "Where is the backpack?"
   choices:
-    A: "Living room"
-    B: "Kitchen"
-    C: "Lobby"
-  answer: B
-  enrich_labels: "toolbox."
+    A: "On the chair"
+    B: "On the floor"
+  answer: A
+  enrich_labels: "backpack."

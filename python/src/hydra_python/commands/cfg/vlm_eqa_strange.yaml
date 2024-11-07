@@ -25,6 +25,7 @@ detection:
     model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 scene_graph_sim:
+  save_image: ${vlm.use_image}
   enrich_rooms: True
   enrich_objects: False
   key_frame_selection:

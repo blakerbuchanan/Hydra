@@ -35,6 +35,7 @@ def main(stretch_parameter_file, hydra_cfg):
     robot = HomeRobotZmqClient(
         robot_ip=parameters.data['robot_ip'],
         use_remote_computer=True,
+        output_path=output_path,
         parameters=parameters,
         enable_rerun_server=parameters.data['enable_rerun_server'],
         publish_observations=parameters.data['enable_realtime_updates'],
@@ -78,7 +79,8 @@ def main(stretch_parameter_file, hydra_cfg):
         parameters, 
         hydra_pipeline, 
         sg_sim,
-        semantic_sensor, 
+        semantic_sensor=semantic_sensor, 
+        output_path=output_path,
         enable_realtime_updates=parameters.data['enable_realtime_updates']
     )
     agent.start()

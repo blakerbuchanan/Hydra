@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import torch
 import click
+import math
 from PIL import Image
 from scipy.spatial.transform import Rotation as R
 
@@ -40,6 +41,8 @@ from stretch.utils.geometry import angle_difference, xyt_base_to_global
 from stretch.utils.logger import Logger
 from stretch.utils.obj_centric import ObjectCentricObservations, ObjectImage
 from stretch.utils.point_cloud import ransac_transform
+
+from stretch.utils.morphology import find_closest_point_on_mask
 
 from stretch.visualization.rerun import occupancy_map_to_3d_points
 from hydra_python.stretch_ai_utils.utils import cluster_frontiers
@@ -67,6 +70,7 @@ class RobotHydraAgent:
         parameters: Union[Parameters, Dict[str, Any]],
         hydra_pipeline,
         sg_sim,
+        output_path: Path = None,
         semantic_sensor: Optional[OvmmPerception] = None,
         voxel_map: Optional[SparseVoxelMap] = None,
         show_instances_detected: bool = False,
@@ -177,6 +181,8 @@ class RobotHydraAgent:
                 min_angle=parameters["motion_planner"]["simplify"]["min_angle"],
             )
         
+        self.traj_imgs_rgb, self.traj_imgs_depth, self.traj_camera_Ks, self.traj_camera_poses = [], [], [], []
+        self.output_path = output_path
         self.hydra_pipeline = hydra_pipeline
         self.sg_sim = sg_sim
         self.hydra_update_freq = parameters["hydra_update_freq"]
@@ -205,12 +211,12 @@ class RobotHydraAgent:
             self._get_observations_thread.start()
 
             # Get observations thread
-            self._hydra_thread = Thread(target=self.hydra_step_loop)
-            self._hydra_thread.start()
+            # self._hydra_thread = Thread(target=self.hydra_step_loop)
+            # self._hydra_thread.start()
         else:
             self._update_map_thread = None
             self._get_observations_thread = None
-            self._hydra_thread = None
+            # self._hydra_thread = None
 
     def get_robot(self) -> AbstractRobotClient:
         """Return the robot in use by this model"""
@@ -660,6 +666,7 @@ class RobotHydraAgent:
             for obs in self.obs_history:
                 if obs.is_pose_graph_node:
                     self.voxel_map.add_obs(obs)
+                    self.hydra_step(obs)
                     added += 1
 
         if verbose:
@@ -712,15 +719,27 @@ class RobotHydraAgent:
         self._obs_history_lock.release()
 
     def hydra_step(self, obs=None):
-        if obs is None and self._realtime_updates:
+        if obs is None:
             obs = self.robot.get_observation()
             obs = self.semantic_sensor.predict(obs)
             
         # labels = np.ones(obs.depth.shape, dtype=np.int32)
-        timestamp_s = 0
+        timestamp_s = int(obs.lidar_timestamp)
         q_wxyz = R.from_matrix(obs.camera_pose[:3, :3]).as_quat(scalar_first=True)
+        for _ in range(self.parameters['num_hydra_steps_per_pose']):
+            self.hydra_pipeline.step(timestamp_s, obs.camera_pose[:3, 3], q_wxyz, obs.depth.astype(np.float32), obs.semantic.astype(np.int32), obs.rgb)
         
-        self.hydra_pipeline.step(timestamp_s, obs.camera_pose[:3, 3], q_wxyz, obs.depth.astype(np.float32), obs.semantic.astype(np.int32), obs.rgb)
+        curr_img = Image.fromarray(obs.rgb)
+        curr_img.save(self.output_path / "current_img.png")
+
+        self.update_frontiers()
+        self.sg_sim.update(
+            frontier_nodes=self.clustered_frontiers, 
+            imgs_rgb=self.traj_imgs_rgb, 
+            imgs_depth=self.traj_imgs_depth, 
+            intrinsics=self.traj_camera_Ks,
+            extrinsics=self.traj_camera_poses)
+
 
     def update_map_loop(self):
         """Threaded function that updates our voxel map in real-time."""
@@ -789,8 +808,13 @@ class RobotHydraAgent:
             t3 = timeit.default_timer()
 
             self.hydra_step(obs)
-            self.update_frontiers()
-            self.sg_sim.update()
+            # self.update_frontiers()
+            # self.sg_sim.update(
+            #     frontier_nodes=self.clustered_frontiers, 
+            #     imgs_rgb=self.traj_imgs_rgb, 
+            #     imgs_depth=self.traj_imgs_depth, 
+            #     intrinsics=self.traj_camera_Ks,
+            #     extrinsics=self.traj_camera_poses)
 
             if not move_head:
                 break
@@ -853,7 +877,7 @@ class RobotHydraAgent:
             if self.use_scene_graph:
                 self.robot._rerun.update_scene_graph(self.scene_graph, self.semantic_sensor)
             self.robot._rerun.update_hydra_mesh(self.hydra_pipeline)
-            self.robot._rerun.update_frontier(self.clustered_frontiers, self.frontier_points)
+            self.robot._rerun.update_frontier(self.clustered_frontiers, self.frontier_points, self.outside_frontier_points)
             self.robot._rerun.update_scene_graph_hydra(self.sg_sim)
         else:
             logger.error("No rerun server available!")
@@ -1619,11 +1643,63 @@ class RobotHydraAgent:
     ) -> PlanResult:
         with self._map_lock:
             res = self.planner.plan(start, target.cpu().numpy())
-            if res.success:
-                return res
-            else:
-                return PlanResult(False, reason="no valid plans found")
-        
+            return res
+            # if res.success:
+            #     return res
+            # else:
+            #     return PlanResult(False, reason="no valid plans found")
+    
+    def execute_trajectory_with_updates(
+        self,
+        trajectory: List[np.ndarray],
+        pos_err_threshold: float = 0.2,
+        rot_err_threshold: float = 0.75,
+        spin_rate: int = 10,
+        verbose: bool = False,
+        per_waypoint_timeout: float = 10.0,
+        final_timeout: float = 10.0,
+        relative: bool = False,
+        blocking: bool = False,
+    ):
+        """Execute a multi-step trajectory; this is always blocking since it waits to reach each one in turn."""
+
+        if isinstance(trajectory, PlanResult):
+            trajectory = [pt.state for pt in trajectory.trajectory]
+
+        obs = self.robot.get_observation()
+        imgs_rgb, imgs_depth, camera_Ks, camera_poses = [obs.rgb], [obs.depth], [obs.camera_K], [obs.camera_pose]
+        for i, pt in enumerate(trajectory):
+            assert (
+                len(pt) == 3 or len(pt) == 2
+            ), "base trajectory needs to be 2-3 dimensions: x, y, and (optionally) theta"
+            # just_xy = len(pt) == 2
+            # self.move_base_to(pt, relative, position_only=just_xy, blocking=False)
+            last_waypoint = i == len(trajectory) - 1
+            self.robot.move_base_to(
+                pt,
+                relative,
+                blocking=last_waypoint,
+                timeout=final_timeout if last_waypoint else per_waypoint_timeout,
+                verbose=verbose,
+            )
+            if not self._realtime_updates:
+                self.update()
+            if not last_waypoint:
+                self.robot.wait_for_waypoint(
+                    pt,
+                    pos_err_threshold=pos_err_threshold,
+                    rot_err_threshold=rot_err_threshold,
+                    rate=spin_rate,
+                    verbose=verbose,
+                    timeout=per_waypoint_timeout,
+                )
+            obs = self.robot.get_observation()
+            imgs_rgb.append(obs.rgb)
+            imgs_depth.append(obs.depth)
+            camera_Ks.append(obs.camera_K)
+            camera_poses.append(obs.camera_pose)
+        return imgs_rgb, imgs_depth, camera_Ks, camera_poses
+    
     def get_history(self, reversed: bool = False) -> List[np.ndarray]:
         """Get the history of the robot's positions."""
         history = []
@@ -1676,7 +1752,7 @@ class RobotHydraAgent:
 
             # Now actually plan to the frontier
             print("       Start:", start)
-            self.print_found_classes(task_goal)
+            # self.print_found_classes(task_goal)
             res = self.plan_to_frontier(
                 start=start, random_goals=random_goals, try_to_plan_iter=try_to_plan_iter
             )
@@ -1701,7 +1777,7 @@ class RobotHydraAgent:
                         instances=self.semantic_sensor is not None,
                     )
                 if not dry_run:
-                    self.robot.execute_trajectory(
+                    self.execute_trajectory_with_updates(
                         [pt.state for pt in res.trajectory],
                         pos_err_threshold=self.pos_err_threshold,
                         rot_err_threshold=self.rot_err_threshold,
@@ -1799,7 +1875,7 @@ class RobotHydraAgent:
         succ = False
         planning_step = 0
         for i in range(max_planning_steps):
-            click.secho(f"Execution step {i}",fg="blue",)
+            click.secho(f"Overall step {i}",fg="blue",)
 
             start = self.robot.get_base_pose()
             start_is_valid = self.space.is_valid(start, verbose=True)
@@ -1817,51 +1893,53 @@ class RobotHydraAgent:
                     click.secho("Failed to recover from invalid start state!",fg="red",)
                     break
             
-            self.update_frontiers()
-            if len(self.clustered_frontiers) > 0:
-                self.sg_sim.update(frontier_nodes=self.clustered_frontiers)
-                if self.robot._rerun and self.update_rerun_every_time:
-                    self.robot._rerun.update_scene_graph_hydra(self.sg_sim)
-            else:
+            if len(self.clustered_frontiers) == 0:
                 click.secho("Empty clustered frontiers. Rotating in place!",fg="yellow",)
                 self.rotate_in_place()
-                continue
 
             (
-                target_pose, 
+                target_pose,
+                target_id, 
                 is_confident, 
                 confidence_level, 
                 answer_output
             ) = vlm_planner.get_next_action()
             if target_pose is not None:
+                target_pose = self.get_closest_safe_node(target_pose, target_id)
+
+                if self.robot._rerun:
+                    self.robot._rerun.log_vlm_target(target_pose)
                 planning_step += 1
                 if is_confident or confidence_level >= 0.9:
                     succ = (answer == answer_output)
                     if succ:
-                        successes += 1
-                        click.secho(f"Success at step{planning_step}",fg="blue",)
+                        result = f"Success at step{planning_step}"
+                        click.secho(result,fg="blue",)
                         click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
+                        
                     else:
-                        click.secho(f"Failure at step {planning_step}",fg="red",)
+                        result = f"Failure at step {planning_step}"
+                        click.secho(result,fg="red",)
                         click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
-                    self.robot._rerun.log_text_data(vlm_planner.full_plan)
+                    self.robot._rerun.log_planner_text(vlm_planner.full_plan + '\n' + result)
                     break
                 
-                res = self.plan_to_target(start=start, target=target_pose[:2])
+                res = self.plan_to_target(start=start, target=target_pose)
                 # if it succeeds, execute a trajectory to this position
                 if res.success:
                     rotated = False
-                    self.robot._rerun.log_text_data(vlm_planner.full_plan)
+                    self.robot._rerun.log_planner_text(vlm_planner.full_plan)
                     click.secho("Plan successful! Executing trajectory",fg="yellow",)
-                    self.robot.execute_trajectory(
+                    self.traj_imgs_rgb, self.traj_imgs_depth, self.traj_camera_Ks, self.traj_camera_poses = self.execute_trajectory_with_updates(
                         [pt.state for pt in res.trajectory],
                         pos_err_threshold=self.pos_err_threshold,
                         rot_err_threshold=self.rot_err_threshold,
                     )
                 else:
-                    click.secho(f"Could not find navigable path: {i}",fg="red",)
+                    click.secho(f"Could not find navigable path: {i} because: {res.reason}",fg="red",)
                     continue
             else:
+                click.secho(f"VLM Planner failed to output target pose.",fg="blue",)
                 continue
 
             # Append latest observations
@@ -2283,16 +2361,70 @@ class RobotHydraAgent:
         frontier, outside_frontier, traversible = self.space.get_frontier()
         
         self.frontier_points = np.array(occupancy_map_to_3d_points(frontier, grid_origin, grid_resolution))
-        outside_frontier_points = np.array(occupancy_map_to_3d_points(outside_frontier, grid_origin, grid_resolution))
+        self.outside_frontier_points = np.array(occupancy_map_to_3d_points(outside_frontier, grid_origin, grid_resolution))
 
-        self.clustered_frontiers = cluster_frontiers(
+        _clustered_frontiers = cluster_frontiers(
             self.frontier_points, 
             self.parameters["motion_planner"]["frontier"]["min_points_for_clustering"], 
             self.parameters["motion_planner"]["frontier"]["num_clusters"], 
             self.parameters["motion_planner"]["frontier"]["cluster_threshold"]
         )
-        # self.clustered_frontiers = []
-        # for frontier in _clustered_frontiers:
-        #     if self.space.is_valid(frontier, verbose=False):
-        #         self.clustered_frontiers.append(frontier)
-        # self.clustered_frontiers = np.stack(self.clustered_frontiers, axis=0)
+        self.clustered_frontiers = []
+        for frontier in _clustered_frontiers:
+            if self.space.is_valid(frontier, verbose=True):
+                self.clustered_frontiers.append(frontier)
+        self.clustered_frontiers = np.stack(self.clustered_frontiers, axis=0)
+    
+    def get_closest_safe_node(self, pose, pose_id):
+        frontier, outside_frontier, traversible = self.space.get_frontier()
+        point_grid_coords = self.space.grid.xy_to_grid_coords(pose[:2]).unsqueeze(0)
+        if 'frontier' in pose_id: # finding theta for frontier point
+            outside_point = find_closest_point_on_mask(outside_frontier, point_grid_coords)
+            if outside_point is None:
+                print(
+                    "[VOXEL MAP: sampling] ERR finding closest pt:",
+                    point_grid_coords,
+                    "closest =",
+                    outside_point,
+                )
+            theta = math.atan2(
+                outside_point[1] - point_grid_coords[0, 1],
+                outside_point[0] - point_grid_coords[0, 0],
+            )
+                              
+            if theta < 0:
+                theta += 2 * np.pi
+
+            xyt = torch.zeros(3)
+            xyt[:2] = torch.tensor(pose[:2])
+            xyt[2] = theta
+        
+        elif 'object' in pose_id: # finsing closest traversible point
+            traversible_point = find_closest_point_on_mask(traversible, point_grid_coords)
+            if traversible_point is None:
+                print(
+                    "[VOXEL MAP: sampling] ERR finding closest pt:",
+                    point_grid_coords,
+                    "closest =",
+                    traversible_point,
+                )
+            theta = math.atan2(
+                point_grid_coords[0, 1] - traversible_point[1],
+                point_grid_coords[0, 0] - traversible_point[0],
+            )
+                              
+            if theta < 0:
+                theta += 2 * np.pi
+
+            # convert back to real-world coordinates
+            traversible_point_xy = self.space.grid.grid_coords_to_xy(traversible_point)
+            if traversible_point_xy is None:
+                print("[VOXEL MAP: sampling] ERR:", traversible_point_xy, point_grid_coords)
+
+            xyt = torch.zeros(3)
+            xyt[:2] = traversible_point_xy[:2]
+            xyt[2] = theta
+        else:
+            raise NotImplementedError("Target node id not defined")
+        
+        return xyt
