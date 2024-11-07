@@ -14,6 +14,7 @@ import yaml
 
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
+from hydra_python.trajectory import Trajectory
 
 MISSING_ADE_LABELS = [29, 33]
 
@@ -307,7 +308,6 @@ class HabitatInterface:
             [mpcat_to_ade[idx] for _, idx in object_to_cat_map.items()]
         )
         self._labelmap = hydra.LabelConverter(category_map)
-
         name_mapping = {}
         for c in self._sim.semantic_scene.categories:
             name_mapping[c.index()] = c.name()
@@ -317,9 +317,7 @@ class HabitatInterface:
         self._colormap = hydra.SegmentationColormap.from_names(names=names)
     
     def _make_instance_labelmap_hm3d(self):
-        object_to_cat_map = {
-            c.id: c.category.index() for c in self._sim.semantic_scene.objects
-        }
+        object_to_cat_map = {c.id: c.category.index() for c in self._sim.semantic_scene.objects}
 
         category_map = np.array(list(object_to_cat_map.values()))
         self._labelmap = hydra.LabelConverter(category_map) # instance idx to category idx
@@ -425,7 +423,7 @@ class HabitatInterface:
         first_pos_habitat = self.G.nodes[node_sequence[0]]["pos"]
         first_pos_cam = _camera_point_from_habitat(first_pos_habitat, z_offset=self.z_offset)
 
-        traj = hydra.Trajectory.rotate(first_pos_cam, body_R_camera=b_R_c, **kwargs)
+        traj = Trajectory.rotate(first_pos_cam, body_R_camera=b_R_c, **kwargs)
         for i in range(len(node_sequence) - 1):
             start = node_sequence[i]
             end = node_sequence[i + 1]
@@ -437,12 +435,12 @@ class HabitatInterface:
             pos_cam = [
                 _camera_point_from_habitat(p, z_offset=self.z_offset) for p in pos_habitat
             ]
-            new_traj = hydra.Trajectory.from_positions(
+            new_traj = Trajectory.from_positions(
                 np.array(pos_cam), body_R_camera=b_R_c, **kwargs
             )
 
             traj += new_traj
-            traj += hydra.Trajectory.rotate(
+            traj += Trajectory.rotate(
                 np.array(pos_cam[-1]), body_R_camera=b_R_c, **kwargs
             )
 
@@ -479,7 +477,7 @@ class HabitatInterface:
             _camera_point_from_habitat(p, z_offset=self.z_offset) for p in positions_habitat
         ]
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
-        return hydra.Trajectory.from_positions(
+        return Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
     
@@ -508,7 +506,7 @@ class HabitatInterface:
         ]
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
 
-        poses = hydra.Trajectory.from_positions(
+        poses = Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
         return poses
@@ -545,7 +543,7 @@ class HabitatInterface:
         quat_xyzw_normal, pos_normal = _transform_from_body(quat_xyzw, pos)
 
         b_R_c = R.from_quat(quat_xyzw_normal).as_matrix()
-        poses = hydra.Trajectory.from_positions(
+        poses = Trajectory.from_positions(
             np.array(positions_camera), body_R_camera=b_R_c
         )
         return poses
@@ -579,10 +577,10 @@ class HabitatInterface:
             return None
 
         b_R_c = R.from_quat(current_quat_xyzw).as_matrix()
-        # poses = hydra.Trajectory.from_positions(
+        # poses = Trajectory.from_positions(
         #     np.array(positions_camera), body_R_camera=b_R_c
         # )
-        poses = hydra.Trajectory.from_positions_eqa(
+        poses = Trajectory.from_positions_eqa(
             np.concatenate([current_pos.reshape(1,3), positions_camera_proj], axis=0), init_quat_wxyz=current_quat_wxyz
         )
         return poses, positions_camera
@@ -597,7 +595,7 @@ class HabitatInterface:
         current_quat_wxyz = np.roll(current_quat_xyzw, 1)
 
         desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
-        poses = hydra.Trajectory.from_positions_habitat(
+        poses = Trajectory.from_positions_habitat(
             np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), init_quat_wxyz=current_quat_wxyz
         )
         return poses
@@ -632,7 +630,7 @@ class HabitatInterface:
             pos_prev = desired_path_habitat[i].copy()
 
         desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
-        poses = hydra.Trajectory.from_poses_habitat_yaw(
+        poses = Trajectory.from_poses_habitat_yaw(
             np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), 
             init_quat_wxyz=current_quat_wxyz,
             desired_quat_wxyz=desired_quat_habitat_wxyz,
@@ -666,7 +664,7 @@ class HabitatInterface:
         current_quat_wxyz = np.roll(current_quat_xyzw, 1)
 
         desired_path_habitat[:,1] = current_pos[1] # project to agent plane, check
-        poses = hydra.Trajectory.from_poses_habitat(
+        poses = Trajectory.from_poses_habitat(
             np.concatenate([current_pos.reshape(1,3), desired_path_habitat], axis=0), 
             init_quat_wxyz=current_quat_wxyz,
             desired_quat_wxyz=desired_quat_habitat_wxyz,
@@ -720,7 +718,7 @@ class HabitatInterface:
         position_camera = _camera_point_from_habitat(start_pos_habitat, z_offset=self.z_offset)
         b_R_c = np.array([[0, 0, 1], [-1, 0, 0], [0, -1, 0]])
 
-        return hydra.Trajectory.rotate(
+        return Trajectory.rotate(
             np.array(position_camera), body_R_camera=b_R_c
         )
 

@@ -91,6 +91,7 @@ class RRLogger:
             'building-to-room': [225,0,0],
             'room-to-region': [0,255,0],
             'region-to-object': [0,0,255],
+            'object-to-region': [0,0,255],
             'region-to-frontier': [255,255,255],
             'region-to-region': [0,0,0],
             'region-to-agent': [255,255,0],

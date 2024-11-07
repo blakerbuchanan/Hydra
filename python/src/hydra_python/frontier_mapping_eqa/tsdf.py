@@ -301,6 +301,8 @@ class TSDFPlanner:
         valid_vox_z = self.vox_coords[valid_pts, 2]
         w_old = self._weight_vol_cpu[valid_vox_x, valid_vox_y, valid_vox_z]
 
+        
+
         depth_diff_narrow = depth_val_narrow - pix_z
         valid_pts_narrow = np.logical_and(
             depth_val_narrow > 0, depth_diff_narrow >= -self._trunc_margin
@@ -308,6 +310,8 @@ class TSDFPlanner:
         valid_vox_x_narrow = self.vox_coords[valid_pts_narrow, 0]
         valid_vox_y_narrow = self.vox_coords[valid_pts_narrow, 1]
         valid_vox_z_narrow = self.vox_coords[valid_pts_narrow, 2]
+        
+        
         if w_new is None:
             tsdf_vals = self._tsdf_vol_cpu[valid_vox_x, valid_vox_y, valid_vox_z]
             valid_dist = dist[valid_pts]
@@ -321,7 +325,7 @@ class TSDFPlanner:
             self._explore_vol_cpu[
                 valid_vox_x_narrow, valid_vox_y_narrow, valid_vox_z_narrow
             ] = 1
-
+            import ipdb; ipdb.set_trace()
             # Integrate color
             old_color = self._color_vol_cpu[valid_vox_x, valid_vox_y, valid_vox_z]
             old_b = np.floor(old_color / self._color_const)
@@ -536,63 +540,6 @@ class TSDFPlanner:
 
         self._rr_logger.log_3d_frontier_data(unoccupied_reachable_normal, frontiers_normal, frontiers_unoccupied_normal)
 
-        # # initialize plot
-        # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(15, 8))
-        # ax1.imshow(unoccupied)
-        # ax1.scatter(cur_point[1], cur_point[0], c="b", s=30)
-        # for point in candidates_pre_cluster:
-        #     ax1.scatter(point[1], point[0], c="r", s=8, alpha=0.5)
-        # ax1.set_title("Unoccupied")
-        # ax2.imshow(unexplored)
-        # ax2.scatter(cur_point[1], cur_point[0], c="b", s=30)
-        # for point in frontiers_in_view:
-        #     ax2.scatter(point[1], point[0], c="r", s=8, alpha=0.5)
-        # ax2.set_title("Unexplored")
-        # ax3.imshow(island)
-        # ax3.set_title("Island")
-
-        # # cluster, or return none
-        # if len(candidates_pre_cluster) < min_points_for_clustering:
-        #     candidates_pix = np.empty((0, 2))
-        # else:
-        #     clusters = fps(candidates_pre_cluster, num_prompt_points)
-
-        #     # merge clusters if too close to each other
-        #     clusters_new = np.empty((0, 2))
-        #     for cluster in clusters:
-        #         if len(clusters_new) == 0:
-        #             clusters_new = np.vstack((clusters_new, cluster))
-        #         else:
-        #             clusters_array = np.array(clusters_new)
-        #             dist = np.sqrt(np.sum((clusters_array - cluster) ** 2, axis=1))
-        #             if np.min(dist) > cluster_threshold / self._voxel_size:
-        #                 clusters_new = np.vstack((clusters_new, cluster))
-        #     candidates = clusters_new
-        #     self.candidates = candidates
-        #     logging.info(f"Number of final candidates: {len(candidates)}")
-
-        #     # add final points to plots
-        #     for ax in [ax1, ax2]:
-        #         for point in candidates:
-        #             ax.scatter(point[1], point[0], c="g", s=30)
-
-        #     # Convert to pixel coordinates
-        #     if len(candidates) > 0:
-        #         candidates_cam = [
-        #             rigid_transform(
-        #                 TSDFPlanner.vox2world(
-        #                     self._vol_origin,
-        #                     np.append(candidates[i], 0).reshape(1, 3),
-        #                     self._voxel_size,
-        #                 ),
-        #                 np.linalg.inv(cam_pose),
-        #             )
-        #             for i in range(len(candidates))
-        #         ]  # to camera coordinates first
-        #         candidates_cam = np.concatenate(candidates_cam, axis=0)
-        #         candidates_pix = TSDFPlanner.cam2pix(candidates_cam, cam_intr)
-        #     else:
-        #         candidates_pix = np.empty((0, 2))
 
         # Save global info
         self.cur_point, self.island, self.unexplored = cur_point, island, unexplored
