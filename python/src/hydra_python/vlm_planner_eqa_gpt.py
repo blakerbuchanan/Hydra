@@ -171,17 +171,11 @@ class VLMPLannerEQAGPT:
                 ## Scene Graph Planner
                 sg_output = self.scene_graph_planner(current_state_prompt, action, sg_response)
                 steps, explanation, sg_desc = sg_output.parsed.node_id, sg_output.parsed.explanation, sg_output.parsed.scene_graph_description
-
-                ## Answer
-                answer = self.get_answer(answer_response)
-                img_desc = answer.parsed.image_description
                 
-                self._history.append({"thought": thought, "action": action, "obs": img_desc + sg_desc})
                 print(f"Time taken for planning next step: {time.time()-start}s")
-
                 if not (sg_output.refusal): # If the model refuses to respond, you will get a refusal message
                     succ=True
-
+                self._history.append({"thought": thought, "action": action})
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
                 breakpoint()
@@ -190,18 +184,16 @@ class VLMPLannerEQAGPT:
         if len(steps) > 0:
             step = steps[0]
         else:
-            return None, None, None, None
-        return step, answer, img_desc, sg_desc
+            return None, None, None
+        return step, answer_response, explanation, sg_desc
 
 
     def get_next_action(self):
         agent_state = self.sg_sim.get_current_semantic_state_str()
         current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
 
-        sg_desc=''
-        step, answer, img_desc, sg_desc = self.get_gpt_output(current_state_prompt)
-        answer, confidence_level, explanation = answer.parsed.answer, answer.parsed.confidence, answer.parsed.explanation
-
+        step, answer_response, node_explanation, sg_desc = self.get_gpt_output(current_state_prompt)
+        
         if step is None:
             return None, False, 0, 0
 
@@ -210,17 +202,28 @@ class VLMPLannerEQAGPT:
         else:
             target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
 
+        ## Answer
+        answer = self.get_answer(answer_response)
+        answer, confidence_level, explanation, img_desc = answer.parsed.answer, answer.parsed.confidence, answer.parsed.explanation, answer.parsed.image_description
+        self._history[-1]["obs"] = f"*Current View:* {img_desc}"
+        if len(self._history) > 1:
+            self._history[-2]["obs"] += f" *Scene Graph:* {sg_desc}"
+    
         # Saving outputs to file
-        self._outputs_to_save.append(f'At t={self._t}: \n \
-                                        Agent state: {agent_state} \n \
-                                        LLM output: {step}. \n \
-                                        Answer: {answer} \n \
-                                        Confidence level: {confidence_level} \n \
-                                        Explanation: {explanation} \n \
-                                        Thought: {self._history[-1]["thought"]} \n \
-                                        Action: {self._history[-1]["action"]} \n \
-                                        Image desc: {img_desc} \n \
-                                        Scene graph desc: {sg_desc} \n \n')
+        self._outputs_to_save.append(f'''At t={self._t}: 
+                                        Agent state: {agent_state}
+                                        Scene graph desc: {sg_desc}  
+                                        Thought: {self._history[-1]["thought"]}
+                                        Action: {self._history[-1]["action"]} 
+                                        ------------------ 
+                                        LLM output: {step}
+                                        Explanation: {node_explanation}
+                                        ----------------- 
+                                        Image desc: {img_desc} 
+                                        Answer: {answer}
+                                        Confidence level: {confidence_level}
+                                        Explanation: {explanation} \n'''
+                                        )
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)

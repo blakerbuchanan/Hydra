@@ -153,7 +153,7 @@ def main(cfg):
             click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
 
-            if (is_confident) & (answer_output != "NONE"):
+            if (is_confident) & (answer_output.lower() != "none"):
                 succ = (answer == answer_output)
                 if succ:
                     successes += 1
