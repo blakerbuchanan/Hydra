@@ -246,14 +246,16 @@ def run_eqa(
 
     if sg_sim:
         # Should be done after saving default image cos this update overwrites it
+        start = time.time()
         sg_sim.update(
             imgs_rgb=imgs_rgb, 
             imgs_depth=imgs_depth, 
             intrinsics=habitat_data.intrinsics, 
             extrinsics=extrinsics, 
             frontier_nodes=frontier_nodes)
+        sg_update_time = time.time()-start
     
-    print(f"{step_time=} {frontier_update_time=} {mesh_log_time=}")
+    print(f"{step_time=} {frontier_update_time=} {mesh_log_time=} {sg_update_time=}")
 
 
 

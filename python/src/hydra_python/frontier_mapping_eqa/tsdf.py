@@ -325,7 +325,7 @@ class TSDFPlanner:
             self._explore_vol_cpu[
                 valid_vox_x_narrow, valid_vox_y_narrow, valid_vox_z_narrow
             ] = 1
-            import ipdb; ipdb.set_trace()
+            # import ipdb; ipdb.set_trace()
             # Integrate color
             old_color = self._color_vol_cpu[valid_vox_x, valid_vox_y, valid_vox_z]
             old_b = np.floor(old_color / self._color_const)

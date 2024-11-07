@@ -56,7 +56,7 @@ class SceneGraphSim:
         self.rr_logger = rr_logger
         self.thresh = 2.0
 
-        self.filter_out_objects = ['wall', 'floor', 'ceiling', 'door_frame']
+        self.filter_out_objects = ['floor', 'ceiling']
 
         if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel
@@ -553,7 +553,7 @@ class SceneGraphSim:
             extrinsics = extrinsics_list[idx]
             result = results[idx]
             for j in range(len(result["boxes"])):
-                if result["scores"].cpu().numpy()[j] > self.sg_cfg.min_detection_confidence:
+                if result["scores"].cpu().numpy()[j] > self.sg_cfg.detection.min_detection_confidence:
                     points_3d = project_2d_to_3d((result["boxes"].cpu().numpy()[j]).astype(int), depth_img, intrinsics, extrinsics)
                     centroid = np.sum(points_3d, axis=0)/4
                     self.task_relevant_objects.append({'pos': centroid, 'label': result['labels'][j], 'confidence': result["scores"].cpu().numpy()[j]})
