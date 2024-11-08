@@ -59,8 +59,6 @@ def main(cfg):
     for question_ind in tqdm(range(len(questions_data))):
         if question_ind in [2,11, 77, 78, 81, 89]:
             continue
-        if question_ind not in np.arange(1, 11):
-            continue
         question_data = questions_data[question_ind]
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
         answer = question_data["answer"]
@@ -192,7 +190,7 @@ def main(cfg):
                     answer_output, is_confident, confidence_level = vlm_planner.vqa()  
             
                     ## Terminate Condition
-                    if (is_confident) & (answer_output.lower() != "none"):
+                    if (is_confident) & (answer_output in ["A", "B", "C", "D"]):
                         succ = (answer == answer_output)
                         if succ:
                             successes += 1
