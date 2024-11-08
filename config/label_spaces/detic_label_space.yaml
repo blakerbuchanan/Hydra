@@ -1,5 +1,5 @@
 ---
-total_semantic_labels: 131
+total_semantic_labels: 140
 dynamic_labels: []
 invalid_labels: []
 object_labels:
@@ -134,9 +134,17 @@ object_labels:
   - 128
   - 129
   - 130
-surface_places_labels: []
+  - 131
+  - 132
+  - 133
+  - 134
+  - 135
+  - 137
+  - 138
+  - 139
+surface_places_labels: [136]
 label_names:
-  - {label: 0, name: unknown}
+  - {label: 0, name: .}
   - {label: 1, name: action_figure}
   - {label: 2, name: android_figure}
   - {label: 3, name: apple}
@@ -245,25 +253,34 @@ label_names:
   - {label: 106, name: tray}
   - {label: 107, name: vase}
   - {label: 108, name: watch}
-  - {label: 109, name: bathtub}
-  - {label: 110, name: bed}
-  - {label: 111, name: bench}
-  - {label: 112, name: cabinet}
-  - {label: 113, name: chair}
-  - {label: 114, name: chest_of_drawers}
-  - {label: 115, name: couch}
-  - {label: 116, name: counter}
-  - {label: 117, name: filing_cabinet}
-  - {label: 118, name: hamper}
-  - {label: 119, name: serving_cart}
-  - {label: 120, name: shelves}
-  - {label: 121, name: shoe_rack}
-  - {label: 122, name: sink}
-  - {label: 123, name: stand}
-  - {label: 124, name: stool}
-  - {label: 125, name: table}
-  - {label: 126, name: toilet}
-  - {label: 127, name: trunk}
-  - {label: 128, name: wardrobe}
-  - {label: 129, name: washer_dryer}
-  - {label: 130, name: other}
+  - {label: 109, name: monitor}
+  - {label: 110, name: television}
+  - {label: 111, name: trash_can}
+  - {label: 112, name: toolbox}
+  - {label: 113, name: red_traffic_cone}
+  - {label: 114, name: bathtub}
+  - {label: 115, name: bed}
+  - {label: 116, name: bench}
+  - {label: 117, name: cabinet}
+  - {label: 118, name: chair}
+  - {label: 119, name: chest_of_drawers}
+  - {label: 120, name: couch}
+  - {label: 121, name: counter}
+  - {label: 122, name: filing_cabinet}
+  - {label: 123, name: hamper}
+  - {label: 124, name: serving_cart}
+  - {label: 125, name: shelves}
+  - {label: 126, name: shoe_rack}
+  - {label: 127, name: sink}
+  - {label: 128, name: stand}
+  - {label: 129, name: stool}
+  - {label: 130, name: table}
+  - {label: 131, name: toilet}
+  - {label: 132, name: trunk}
+  - {label: 133, name: wardrobe}
+  - {label: 134, name: washer_dryer}
+  - {label: 135, name: wall}
+  - {label: 136, name: floor}
+  - {label: 137, name: ceiling}
+  - {label: 138, name: door}
+  - {label: 139, name: other}

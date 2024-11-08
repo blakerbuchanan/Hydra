@@ -251,7 +251,6 @@ def run_eqa(
             imgs_depth=imgs_depth, 
             intrinsics=habitat_data.intrinsics, 
             extrinsics=extrinsics, 
-            save_image=save_image, 
             frontier_nodes=frontier_nodes)
     
     print(f"{step_time=} {frontier_update_time=} {mesh_log_time=}")

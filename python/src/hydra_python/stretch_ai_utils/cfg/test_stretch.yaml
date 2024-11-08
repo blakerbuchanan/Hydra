@@ -10,9 +10,10 @@ initial_state:
   arm: 0.01
   gripper: 0.0
   wrist: [0.0, -1.5, 0.0]
-  head: [0.0, -0.3]
+  head: [0.0, -0.4]
 
 hydra_update_freq: 0.1
+num_hydra_steps_per_pose: 10
 
 # Encoder setup
 # Encoder is used to compute per-object embeddings.
@@ -39,7 +40,7 @@ min_points_per_voxel: 15  # Drop things below this density per voxel
 pad_obstacles: 3  # Add this many units (voxel_size) to the area around obstacles
 min_pad_obstacles: 1  # Do not pad LESS than this amount, for safety.
 
-local_radius: 0.8  # Area around the robot to mark as explored (kind of a hack)
+local_radius: 1.0  # Area around the robot to mark as explored (kind of a hack)
 add_local_every_step: False
 remove_visited_from_obstacles: False
 min_depth: 0.5
@@ -102,7 +103,7 @@ agent:
     temporal_threshold: 0.1
   use_realtime_updates: True
   realtime_rotation_steps: 4
-  in_place_rotation_steps: 20  # If you are not moving the head, rotate more often
+  in_place_rotation_steps: 10  # If you are not moving the head, rotate more often
   sweep_head_on_update: False
   # in_place_rotation_steps: 4
   # sweep_head_on_update: True
@@ -130,7 +131,7 @@ instance_memory:
 
 # TAMP parameters
 guarantee_instance_is_reachable: True
-use_scene_graph: True
+use_scene_graph: False
 scene_graph:
   max_near_distance: 0.3
   min_on_height: 0.05

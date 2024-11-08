@@ -1,8 +1,8 @@
 # General
 seed: 42
-question: 0
-exp_name: test_stretch_hydra
-# exp_name: stretch_${vlm.name}_question_${question}
+question: 1
+# exp_name: test_stretch_hydra
+exp_name: stretch_${vlm.name}_question_${question}_backpack_img
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${exp_name}_results
 gpu: 0 
@@ -24,19 +24,20 @@ detection:
     model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 scene_graph_sim:
-  enrich_rooms: False
+  save_image: ${vlm.use_image}
+  enrich_rooms: True
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
-    use_siglip_for_images: False
+    use_siglip_for_images: True
     topk: 2
-    visualize_best_image: False
+    visualize_best_image: True
   detection:
     detection_model: GroundedSAM2
     visualize_detections: False
     return_mask: False
     min_detection_confidence: 0.75
-  img_subsample_freq: 3
+  img_subsample_freq: 1
   
 vlm:
   name: 'gpt-4o-mini' # 'gemini', 'gpt-4o-mini', 

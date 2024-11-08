@@ -195,12 +195,14 @@ class VLMPLannerEQAGPT:
         step, answer_response, node_explanation, sg_desc = self.get_gpt_output(current_state_prompt)
         
         if step is None:
-            return None, False, 0, 0
+            return None, None, False, 0, 0
 
         if step.__class__.__name__ == 'Goto_object_node_step':
             target_pose = self.sg_sim.get_position_from_id(step.object_id.name)
+            target_id = step.object_id.name
         else:
             target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
+            target_id = step.frontier_id.name
 
         ## Answer
         answer = self.get_answer(answer_response)
