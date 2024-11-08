@@ -46,13 +46,7 @@ def gpt_completion_api(model: str,
 	)
     return response.choices[0].message
 
-def create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options):
-    class Answer(BaseModel):
-        explanation: str
-        answer: Answer_options
-        confidence: int
-        image_description: str
-
+def create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list):
     class Goto_frontier_node_step(BaseModel):
         frontier_id: frontier_node_list
 
@@ -63,9 +57,7 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
         node_id:  List[Union[Goto_object_node_step, Goto_frontier_node_step]]
         explanation: str
         scene_graph_description: str
-    
-    
-    return SceneGraphResponse, Answer
+    return SceneGraphResponse
 
 class ReactResponse(BaseModel):
     thought: str
@@ -77,6 +69,8 @@ class VLMPLannerEQAGPT:
         
         self._question, self.choices, self.vlm_pred_candidates = question, choices, pred_candidates
         self._answer = answer
+        self.answer_response = self._create_answer_response()
+
         self._output_path = output_path
         self._vlm_type = cfg.name
         self._use_image = cfg.use_image
@@ -102,9 +96,18 @@ class VLMPLannerEQAGPT:
         
         room_node_list = Enum('room_node_list', {id: name for id, name in zip(self.sg_sim.room_node_ids, self.sg_sim.room_node_names)}, type=str)
         region_node_list = Enum('region_node_list', {ac: ac for ac in self.sg_sim.region_node_ids}, type=str)
-        Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates+["NONE"], self.choices+["Not Sure."])}, type=str)
-        return frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options
+        
+        return frontier_node_list, room_node_list, region_node_list, object_node_list
 
+    def _create_answer_response(self):
+        answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates+["NONE"], self.choices+["Not Sure."])}, type=str)
+        
+        class Answer(BaseModel):
+            explanation: str
+            answer: answer_options
+            confidence: int
+            image_description: str
+        return Answer
 
     def planner(self):
         carryover = ''
@@ -133,7 +136,7 @@ class VLMPLannerEQAGPT:
                                 )
         return out
 
-    def get_answer(self, answer_response):
+    def get_answer(self):
         image_path = None
         if self._use_image:
             image_path = self._output_path / f"current_img_{self._t}.png"
@@ -143,9 +146,9 @@ class VLMPLannerEQAGPT:
         answer = gpt_completion_api(self._vlm_type,
                                     system_message= ANSWER_PROMPT,          
                                     user_message= user_prompt.format(input=self._question),
-                                    response_format = answer_response, 
+                                    response_format = self.answer_response,
                                     image_path = image_path
-        )
+                                    )
         return answer
 
     def get_current_state_prompt(self, scene_graph, agent_state):
@@ -156,8 +159,8 @@ class VLMPLannerEQAGPT:
 
 
     def get_gpt_output(self, current_state_prompt):
-        frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options = self.get_actions()
-        sg_response, answer_response = create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options)
+        frontier_node_list, room_node_list, region_node_list, object_node_list = self.get_actions()
+        sg_response = create_planner_response(frontier_node_list, room_node_list, region_node_list, object_node_list)
         
         succ=False
         while not succ:
@@ -167,7 +170,8 @@ class VLMPLannerEQAGPT:
                 ## High-level Planner
                 react = self.planner()
                 thought, action = react.parsed.thought, react.parsed.action
-                
+                self._history.append({"thought": thought, "action": action})
+
                 ## Scene Graph Planner
                 sg_output = self.scene_graph_planner(current_state_prompt, action, sg_response)
                 steps, explanation, sg_desc = sg_output.parsed.node_id, sg_output.parsed.explanation, sg_output.parsed.scene_graph_description
@@ -175,7 +179,7 @@ class VLMPLannerEQAGPT:
                 print(f"Time taken for planning next step: {time.time()-start}s")
                 if not (sg_output.refusal): # If the model refuses to respond, you will get a refusal message
                     succ=True
-                self._history.append({"thought": thought, "action": action})
+
             except Exception as e:
                 print(f"An error occurred: {e}. Sleeping for 60s")
                 breakpoint()
@@ -185,50 +189,58 @@ class VLMPLannerEQAGPT:
             step = steps[0]
         else:
             return None, None, None
-        return step, answer_response, explanation, sg_desc
+        return step, explanation, sg_desc
 
 
     def get_next_action(self):
         agent_state = self.sg_sim.get_current_semantic_state_str()
         current_state_prompt = self.get_current_state_prompt(self.sg_sim.scene_graph_str, agent_state)
 
-        step, answer_response, node_explanation, sg_desc = self.get_gpt_output(current_state_prompt)
+        step, node_explanation, sg_desc = self.get_gpt_output(current_state_prompt)
         
         if step is None:
             return None, False, 0, 0
+        print(f'At t={self._t-1}: \n {step}\n')
 
         if step.__class__.__name__ == 'Goto_object_node_step':
             target_pose = self.sg_sim.get_position_from_id(step.object_id.name)
         else:
             target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
-
-        ## Answer
-        answer = self.get_answer(answer_response)
-        answer, confidence_level, explanation, img_desc = answer.parsed.answer, answer.parsed.confidence, answer.parsed.explanation, answer.parsed.image_description
-        self._history[-1]["obs"] = f"*Current View:* {img_desc}"
+        
+        ## Note: We want to tuple as (thought, action, observation). This observation is before the action, and thus is saved to that of the previous timestep. 
         if len(self._history) > 1:
             self._history[-2]["obs"] += f" *Scene Graph:* {sg_desc}"
-    
+
         # Saving outputs to file
         self._outputs_to_save.append(f'''At t={self._t}: 
                                         Agent state: {agent_state}
                                         Scene graph desc: {sg_desc}  
                                         Thought: {self._history[-1]["thought"]}
-                                        Action: {self._history[-1]["action"]} 
-                                        ------------------ 
-                                        LLM output: {step}
+                                        Action: {self._history[-1]["action"]}  
+                                        Navigate to: {step}
                                         Explanation: {node_explanation}
                                         ----------------- 
-                                        Image desc: {img_desc} 
-                                        Answer: {answer}
+                                        '''
+                                        )      
+        self._t += 1       
+        return target_pose
+
+    def vqa(self):
+        answer = self.get_answer()
+        answer, confidence_level, explanation, img_desc = answer.parsed.answer, answer.parsed.confidence, answer.parsed.explanation, answer.parsed.image_description
+        
+        self._history[-1]["obs"] = f"*Current View:* {img_desc}"
+        self._outputs_to_save.append(f'''Image desc: {img_desc} 
+                                        Answer: {answer.value}
                                         Confidence level: {confidence_level}
-                                        Explanation: {explanation} \n'''
+                                        Explanation: {explanation} \n
+                                        '''
                                         )
         self.full_plan = ' '.join(self._outputs_to_save)
         with open(self._output_path / "llm_outputs.json", "w") as text_file:
             text_file.write(self.full_plan)
 
-        print(f'At t={self._t}: \n {step} \n {answer}')
+        print(f'{answer}')
+        return answer.name, confidence_level>=4, confidence_level
 
-        self._t += 1
-        return target_pose, (confidence_level>=4), confidence_level, answer.name
+        

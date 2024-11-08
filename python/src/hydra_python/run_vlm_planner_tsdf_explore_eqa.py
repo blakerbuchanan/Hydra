@@ -59,7 +59,8 @@ def main(cfg):
     for question_ind in tqdm(range(len(questions_data))):
         if question_ind in [2,11, 77, 78, 81, 89]:
             continue
-
+        if question_ind not in np.arange(1, 11):
+            continue
         question_data = questions_data[question_ind]
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
         answer = question_data["answer"]
@@ -149,56 +150,59 @@ def main(cfg):
         succ = False
         for cnt_step in range(num_steps):
             start = time.time()
-            target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
+            target_pose = vlm_planner.get_next_action()
             click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
             rr_logger.log_text_data(vlm_planner.full_plan)
+            
+            if target_pose is not None:
+                # desired_path = tsdf_planner.sample_frontier()
+                current_heading = habitat_data.get_heading_angle()
+                desired_path = tsdf_planner.path_to_frontier(target_pose)
 
-            if (is_confident) & (answer_output.lower() != "none"):
-                succ = (answer == answer_output)
-                if succ:
-                    successes += 1
-                    click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
-                    click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
+                agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
+                current_pos = agent.get_state().position
+                frontier_habitat = pos_normal_to_habitat(target_pose)
+                frontier_habitat[1] = current_pos[1]
+                path = habitat_sim.nav.ShortestPath()
+                path.requested_start = current_pos
+                path.requested_end = frontier_habitat
+                # Compute the shortest path
+                found_path = habitat_data.pathfinder.find_path(path)
+                if found_path:
+                    desired_path = pos_habitat_to_normal(np.array(path.points))
+                    rr_logger.log_traj_data(desired_path)
+                    rr_logger.log_target_poses(target_pose)
                 else:
-                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
-                    click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
-                break
-            else:
-                if target_pose is not None:
-                    # desired_path = tsdf_planner.sample_frontier()
-                    current_heading = habitat_data.get_heading_angle()
-                    desired_path = tsdf_planner.path_to_frontier(target_pose)
+                    click.secho(f"Cannot find navigable path: {cnt_step}",fg="red",)
+                    continue
 
-                    agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
-                    current_pos = agent.get_state().position
-                    frontier_habitat = pos_normal_to_habitat(target_pose)
-                    frontier_habitat[1] = current_pos[1]
-                    path = habitat_sim.nav.ShortestPath()
-                    path.requested_start = current_pos
-                    path.requested_end = frontier_habitat
-                    # Compute the shortest path
-                    found_path = habitat_data.pathfinder.find_path(path)
-                    if found_path:
-                        desired_path = pos_habitat_to_normal(np.array(path.points))
-                        rr_logger.log_traj_data(desired_path)
-                        rr_logger.log_target_poses(target_pose)
-                    else:
-                        click.secho(f"Cannot find navigable path: {cnt_step}",fg="red",)
-                        continue
+                poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+                if poses is not None:
+                    click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)
+                    run_eqa(
+                        pipeline,
+                        habitat_data,
+                        poses,
+                        output_path=question_path,
+                        rr_logger=rr_logger,
+                        tsdf_planner=tsdf_planner,
+                        sg_sim=sg_sim,
+                        save_image=cfg.vlm.use_image,
+                    )
+                    answer_output, is_confident, confidence_level = vlm_planner.vqa()  
+            
+                    ## Terminate Condition
+                    if (is_confident) & (answer_output.lower() != "none"):
+                        succ = (answer == answer_output)
+                        if succ:
+                            successes += 1
+                            click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                            click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
+                        else:
+                            click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
+                            click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
+                        break
 
-                    poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
-                    if poses is not None:
-                        click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)
-                        run_eqa(
-                            pipeline,
-                            habitat_data,
-                            poses,
-                            output_path=question_path,
-                            rr_logger=rr_logger,
-                            tsdf_planner=tsdf_planner,
-                            sg_sim=sg_sim,
-                            save_image=cfg.vlm.use_image,
-                        )
         metrics = {
             'steps': cnt_step,
             'is_confident': is_confident,
