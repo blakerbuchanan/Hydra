@@ -587,6 +587,10 @@ class SceneGraphSim:
             best = np.argmax(probs)
             top_k_indices = np.argsort(probs)[::-1][:self.sg_cfg.key_frame_selection.topk]
 
+            img_idx = 0
+            while (self.output_path / f'current_img_{img_idx}.png').exists():
+                img_idx += 1
+
             if self.sg_cfg.key_frame_selection.visualize_best_image:
                 labeled_frames = []
                 for idx in range(len(sampled_images)):
@@ -597,15 +601,12 @@ class SceneGraphSim:
                     cv2.putText(color_img, str(label), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
                     labeled_frames.append(color_img)
 
-                idx = 0
-                while (self.output_path / f'images_with_clip_probs_{idx}.gif').exists():
-                    idx += 1
-                imageio.mimsave(self.output_path / f'images_with_clip_probs_{idx}.gif', labeled_frames, fps=0.5)
+                imageio.mimsave(self.output_path / f'images_with_clip_probs_{img_idx}.gif', labeled_frames, fps=0.5)
 
             if self.save_image:
-                curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
+                curr_img = Image.fromarray(np.concatenate([*sampled_images[top_k_indices], imgs_rgb[-1]], axis=1))
                 # curr_img = Image.fromarray(sampled_images[best])
-                curr_img.save(self.output_path / f"current_img_{idx}.png")
+                curr_img.save(self.output_path / f"current_img_{img_idx}.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
 
     def remove_close_positions(self, data, threshold):
