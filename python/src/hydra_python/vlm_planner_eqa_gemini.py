@@ -5,7 +5,6 @@ import time
 import hydra_python as hydra
 import base64
 
-from openai import OpenAI
 import google.generativeai as genai
 import os
 import mimetypes
@@ -123,15 +122,15 @@ def create_planner_response(frontier_node_list, room_node_list, region_node_list
         )
 
     steps = genai.protos.Schema(
-            type = genai.protos.Type.ARRAY,
-            items = step,
-            min_items = 1
-        )
+        type = genai.protos.Type.ARRAY,
+        items = step,
+        min_items = 1
+    )
 
     summary = genai.protos.Schema(
-                    type = genai.protos.Type.STRING,
-                    description="Provide a concise summary of the names of objects you have seen and their locations in the environment. Do this for both scene graph objects and objects identified in images."
-                )
+        type = genai.protos.Type.STRING,
+        description="Provide a concise summary of the names of objects you have seen and their locations in the environment. Do this for both scene graph objects and objects identified in images."
+    )
 
     response_schema = genai.protos.Schema(
         type=genai.protos.Type.OBJECT,

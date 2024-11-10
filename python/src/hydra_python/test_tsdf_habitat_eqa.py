@@ -21,6 +21,8 @@ import torch
 from hydra_python.detection.detic_segmenter import DeticSegmenter
 
 def main(cfg):
+    exploration_type = "object_node" # 'frontiers
+
     questions_data, init_pose_data = load_eqa_data(cfg.data)
     
     output_path = cfg.output_path
@@ -37,7 +39,7 @@ def main(cfg):
         segmenter = None
 
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in np.arange(7):
+        if question_ind in np.arange(2):
             continue
         question_data = questions_data[question_ind]
         
@@ -119,12 +121,19 @@ def main(cfg):
         num_steps = 7
         for i in range(num_steps):
             current_heading = habitat_data.get_heading_angle()
-            desired_path, frontier_normal = tsdf_planner.sample_frontier()
+            if 'frontier' in exploration_type:
+                _, target_pose = tsdf_planner.sample_frontier()
+            if 'object_node' in exploration_type:
+                obj_idx = random.randint(0,len(sg_sim.object_node_ids))
+                object_id = sg_sim.object_node_ids[obj_idx]
+                target_pose = sg_sim.get_position_from_id(object_id)
+                # desired_path = tsdf_planner.path_to_frontier(target_pose)
+                click.secho(f'Sampled object_id:{object_id}, object name: {sg_sim.object_node_names[obj_idx]}', fg='yellow')
             
             # # Create a path object
             agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
             current_pos = agent.get_state().position
-            frontier_habitat = pos_normal_to_habitat(frontier_normal)
+            frontier_habitat = pos_normal_to_habitat(target_pose)
             frontier_habitat[1] = current_pos[1]
             path = habitat_sim.nav.ShortestPath()
             path.requested_start = current_pos
@@ -132,14 +141,14 @@ def main(cfg):
             # Compute the shortest path
             found_path = habitat_data.pathfinder.find_path(path)
             if found_path:
-                desired_path = pos_habitat_to_normal(np.array(path.points))
+                desired_path = pos_habitat_to_normal(np.array(path.points)[:-1])
                 rr_logger.log_traj_data(desired_path)
-                rr_logger.log_target_poses(frontier_normal)
+                rr_logger.log_target_poses(target_pose)
             else:
                 click.secho(f"Cannot find navigable path: {i}",fg="red",)
                 continue
 
-            poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+            poses = habitat_data.get_trajectory_from_path_habitat_frame2(target_pose, desired_path, current_heading, cfg.habitat.camera_tilt_deg)
             click.secho(f"Executing trajectory: {i}",fg="yellow",)
             run_eqa(
                 pipeline,

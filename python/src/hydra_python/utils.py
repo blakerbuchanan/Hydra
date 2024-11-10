@@ -3,6 +3,11 @@ import csv, os, ast
 import click
 import numpy as np
 
+def get_latest_image(output_folder):
+    png_files = [file for file in os.listdir(output_folder) if file.startswith('current_img_')]
+    indices = [int(f.split('current_img_')[1].split('.png')[0]) for f in png_files]
+    return output_folder / f"current_img_{np.max(indices)}.png"
+
 def hydra_get_mesh(pipeline):
     vertices = pipeline.graph.mesh.get_vertices()
     faces = pipeline.graph.mesh.get_faces()
@@ -290,3 +295,6 @@ def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_m
         hydra.set_glog_dir(str(glog_dir))
     
     return pipeline
+
+if __name__ == "__main__":
+    get_latest_image(Path("/home/saumyas/catkin_ws_semnav/src/hydra/outputs/test_obj_enrich/0_00006-HkseAnWCgqk_0"))

@@ -57,7 +57,7 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [2,11, 77, 78, 81, 89]:
+        if question_ind in [0, 1, 2, 11, 77, 78, 81, 89]:
             continue
 
         question_data = questions_data[question_ind]
@@ -147,60 +147,75 @@ def main(cfg):
 
         num_steps = 20
         succ = False
+        planning_steps = 0
         for cnt_step in range(num_steps):
             start = time.time()
-            target_pose, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
-            click.secho(f"Time for planning step {cnt_step} is {time.time()-start}",fg="green",)
-            rr_logger.log_text_data(vlm_planner.full_plan)
-
-            if (is_confident) & (answer_output.lower() != "none"):
+            target_pose, target_id, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
+            click.secho(f"VLM planning time for overall step {cnt_step} and vlm step {planning_steps} is {time.time()-start}",fg="green",)
+            
+            if is_confident or (confidence_level>0.85):
                 succ = (answer == answer_output)
                 if succ:
                     successes += 1
-                    click.secho(f"Success at step{cnt_step} for {question_ind}:{scene_floor}",fg="blue",)
+                    result = f"Success at vlm step{planning_steps} for {question_ind}:{scene_floor}"
+                    click.secho(result,fg="blue",)
                     click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="blue",)
                 else:
-                    click.secho(f"Failure at step {cnt_step} for {question_ind}:{scene_floor}",fg="red",)
+                    result = f"Failure at vlm step {planning_steps} for {question_ind}:{scene_floor}"
+                    click.secho(result,fg="red",)
                     click.secho(f"VLM Planner answer: {answer_output}, Correct answer: {answer}",fg="red",)
+                rr_logger.log_text_data(vlm_planner.full_plan + "\n" + result)
                 break
+
+            if target_pose is not None:
+
+                # desired_path = tsdf_planner.sample_frontier()
+                current_heading = habitat_data.get_heading_angle()
+                # desired_path = tsdf_planner.path_to_frontier(target_pose) # not being used anymore
+
+                agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
+                current_pos = agent.get_state().position
+                frontier_habitat = pos_normal_to_habitat(target_pose)
+                frontier_habitat[1] = current_pos[1]
+                path = habitat_sim.nav.ShortestPath()
+                path.requested_start = current_pos
+                path.requested_end = frontier_habitat
+                # Compute the shortest path
+                found_path = habitat_data.pathfinder.find_path(path)
+
+                if found_path:
+                    desired_path = pos_habitat_to_normal(np.array(path.points)[:-1])
+                    rr_logger.log_traj_data(desired_path)
+                    rr_logger.log_target_poses(target_pose)
+                else:
+                    click.secho(f"Cannot find navigable path at {cnt_step}. Continuing..",fg="red",)
+                    continue
+
+                poses = habitat_data.get_trajectory_from_path_habitat_frame2(target_pose, desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+                if poses is not None:
+                    click.secho(f"Executing trajectory at overall step {cnt_step} and vlm step {planning_steps}",fg="yellow",)
+                    run_eqa(
+                        pipeline,
+                        habitat_data,
+                        poses,
+                        output_path=question_path,
+                        rr_logger=rr_logger,
+                        tsdf_planner=tsdf_planner,
+                        sg_sim=sg_sim,
+                        save_image=cfg.vlm.use_image,
+                    )
+                    ## If trajectory successfully executed
+                    rr_logger.log_text_data(vlm_planner.full_plan)
+                    planning_steps+=1
+                else:
+                    click.secho(f"Cannot find trajectory from navigable path at {cnt_step}. Continuing..",fg="red",)
+                    continue
             else:
-                if target_pose is not None:
-                    # desired_path = tsdf_planner.sample_frontier()
-                    current_heading = habitat_data.get_heading_angle()
-                    desired_path = tsdf_planner.path_to_frontier(target_pose)
-
-                    agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
-                    current_pos = agent.get_state().position
-                    frontier_habitat = pos_normal_to_habitat(target_pose)
-                    frontier_habitat[1] = current_pos[1]
-                    path = habitat_sim.nav.ShortestPath()
-                    path.requested_start = current_pos
-                    path.requested_end = frontier_habitat
-                    # Compute the shortest path
-                    found_path = habitat_data.pathfinder.find_path(path)
-                    if found_path:
-                        desired_path = pos_habitat_to_normal(np.array(path.points))
-                        rr_logger.log_traj_data(desired_path)
-                        rr_logger.log_target_poses(target_pose)
-                    else:
-                        click.secho(f"Cannot find navigable path: {cnt_step}",fg="red",)
-                        continue
-
-                    poses = habitat_data.get_trajectory_from_path_habitat_frame2(desired_path, current_heading, cfg.habitat.camera_tilt_deg)
-                    if poses is not None:
-                        click.secho(f"Executing trajectory: {vlm_planner.t}",fg="yellow",)
-                        run_eqa(
-                            pipeline,
-                            habitat_data,
-                            poses,
-                            output_path=question_path,
-                            rr_logger=rr_logger,
-                            tsdf_planner=tsdf_planner,
-                            sg_sim=sg_sim,
-                            save_image=cfg.vlm.use_image,
-                        )
+                click.secho(f"VLM planner failed at overall step {cnt_step}. Continuing...",fg="red",)
+        
         metrics = {
-            'steps': cnt_step,
+            'vlm steps': planning_steps,
+            'overall steps': cnt_step,
             'is_confident': is_confident,
             'confidence_level': confidence_level
         }
