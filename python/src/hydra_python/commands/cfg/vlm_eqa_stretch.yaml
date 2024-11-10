@@ -2,7 +2,7 @@
 seed: 42
 question: 1
 # exp_name: test_stretch_hydra
-exp_name: stretch_${vlm.name}_question_${question}_backpack_img
+exp_name: stretch_${vlm.name}_question_${question}_backpack_img2
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${exp_name}_results
 gpu: 0 
@@ -30,7 +30,7 @@ scene_graph_sim:
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True
-    topk: 2
+    topk: 1
     visualize_best_image: True
   detection:
     detection_model: GroundedSAM2

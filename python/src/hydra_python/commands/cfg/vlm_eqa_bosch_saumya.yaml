@@ -18,6 +18,7 @@ data:
   semantic_annot_data_path: '/home/saumyas/semnav_workspace/data/hm3d-train-semantic-annots-v0.2'
   scene_data_path: '/home/saumyas/semnav_workspace/data/hm3d/train'
   eqa_dataset_enrich_labels: '/home/saumyas/semnav_workspace/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
+  use_semantic_data: False
 
 logging:
   output_parent_dir: results
@@ -30,11 +31,12 @@ detection:
     model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 scene_graph_sim:
+  save_image: ${vlm.use_image}
   enrich_rooms: True
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
-    use_siglip_for_images: True
+    use_siglip_for_images: False
     topk: 2
     visualize_best_image: True
   detection:
@@ -62,6 +64,7 @@ habitat:
   get_clip_embeddings: False
   get_siglip_embeddings: False
   img_subsample_freq: 2
+  use_semantic_data: ${data.use_semantic_data}
 
 
 hydra:
@@ -92,3 +95,11 @@ frontier_mapping:
     circle_radius: 18
     frontier_min_neighbors: 3
     frontier_max_neighbors: 4
+
+detic:
+  vocabulary: 'custom'
+  config_file: '/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/detection/configs/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.yaml'
+  custom_vocabulary_path: '/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/hm3d_label_space.yaml'
+  weights: '/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/detection/models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth'
+  confidence_threshold: 0.4
+  MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH: '/home/saumyas/semnav_workspace/src/stretch_ai/src/stretch/perception/detection/detic/Detic/datasets/metadata/lvis_v1_train_cat_info.json'

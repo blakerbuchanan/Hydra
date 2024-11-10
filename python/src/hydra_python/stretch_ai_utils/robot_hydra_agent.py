@@ -1910,7 +1910,7 @@ class RobotHydraAgent:
                 if self.robot._rerun:
                     self.robot._rerun.log_vlm_target(target_pose)
                 planning_step += 1
-                if is_confident or confidence_level >= 0.9:
+                if (is_confident) & (answer_output.lower() != "none"):
                     succ = (answer == answer_output)
                     if succ:
                         result = f"Success at step{planning_step}"

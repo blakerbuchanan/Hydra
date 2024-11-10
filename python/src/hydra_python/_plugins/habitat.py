@@ -281,13 +281,14 @@ class HabitatInterface:
         if cfg.scene_type=='mp3d':
             self._make_instance_labelmap_mp3d()
         if cfg.scene_type=='hm3d':
-            self._make_instance_labelmap_hm3d()
+            self._make_instance_labelmap_hm3d(cfg.use_semantic_data)
             # self._write_config_yaml()
 
         self._obs = None
         self._labels = None
 
         self._make_navgraph(inflation_radius=cfg.inflation_radius)
+        self.cfg = cfg
 
     def _make_instance_labelmap_mp3d(self):
         object_to_cat_map = {
@@ -316,19 +317,23 @@ class HabitatInterface:
         names = [name_mapping[ade_to_mpcat[idx]] for idx in keys]
         self._colormap = hydra.SegmentationColormap.from_names(names=names)
     
-    def _make_instance_labelmap_hm3d(self):
-        object_to_cat_map = {c.id: c.category.index() for c in self._sim.semantic_scene.objects}
+    def _make_instance_labelmap_hm3d(self, use_semantic_data):
+        if use_semantic_data:
+            object_to_cat_map = {c.id: c.category.index() for c in self._sim.semantic_scene.objects}
 
-        category_map = np.array(list(object_to_cat_map.values()))
-        self._labelmap = hydra.LabelConverter(category_map) # instance idx to category idx
+            category_map = np.array(list(object_to_cat_map.values()))
+            self._labelmap = hydra.LabelConverter(category_map) # instance idx to category idx
 
-        name_mapping = {}
-        for c in self._sim.semantic_scene.categories:
-            name_mapping[c.index()] = c.name()
+            name_mapping = {}
+            for c in self._sim.semantic_scene.categories:
+                name_mapping[c.index()] = c.name()
 
-        hm3d_cat_idxs = sorted(list(name_mapping.keys()))
-        names = [name_mapping[idx] for idx in hm3d_cat_idxs]
-        self._colormap = hydra.SegmentationColormap.from_names(names=names)
+            hm3d_cat_idxs = sorted(list(name_mapping.keys()))
+            names = [name_mapping[idx] for idx in hm3d_cat_idxs]
+            self._colormap = hydra.SegmentationColormap.from_names(names=names)
+        else:
+            self._labelmap = None
+            self._colormap = None
 
     def _write_config_yaml(self):
         output_path = pathlib.Path("/home/saumyas/catkin_ws_semnav/src/hydra/config/label_spaces/hm3d_label_space.yaml")

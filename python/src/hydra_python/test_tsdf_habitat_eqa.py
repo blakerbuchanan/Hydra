@@ -18,9 +18,11 @@ from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import sys
 import torch 
 
+from hydra_python.detection.detic_segmenter import DeticSegmenter
+
 def main(cfg):
     questions_data, init_pose_data = load_eqa_data(cfg.data)
-
+    
     output_path = cfg.output_path
     os.makedirs(cfg.output_path, exist_ok=True)
     output_path = Path(cfg.output_path)
@@ -28,6 +30,11 @@ def main(cfg):
     device = f"cuda:{cfg.gpu}" if torch.cuda.is_available() else "cpu"
 
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
+
+    if not cfg.data.use_semantic_data:
+        segmenter = DeticSegmenter(cfg)
+    else:
+        segmenter = None
 
     for question_ind in tqdm(range(len(questions_data))):
         if question_ind in np.arange(7):
@@ -45,7 +52,7 @@ def main(cfg):
             cfg=cfg.habitat,
             device=device,)
         pipeline = initialize_hydra_pipeline(cfg.hydra, habitat_data, question_path)
-        
+
         rr_logger = RRLogger(question_path)
 
         click.secho(f'\n========\nIndex: {question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}',fg="green",)
@@ -74,6 +81,10 @@ def main(cfg):
             rr_logger=rr_logger,
         )
 
+        if f'{question_ind}_{question_data["scene"]}' in eqa_enrich_labels:
+            enrich_labels = eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels']
+        else:
+            enrich_labels = ' '
         sg_sim = hydra.SceneGraphSim(
             cfg, 
             question_path, 
@@ -81,7 +92,7 @@ def main(cfg):
             rr_logger, 
             device=device, 
             clean_ques_ans=clean_ques_ans,
-            enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
+            enrich_object_labels=enrich_labels)
 
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
@@ -95,6 +106,7 @@ def main(cfg):
             tsdf_planner=tsdf_planner,
             sg_sim=sg_sim,
             save_image=cfg.vlm.use_image,
+            segmenter=segmenter,
         )
 
         # LOG NAVMESH
@@ -138,6 +150,7 @@ def main(cfg):
                 tsdf_planner=tsdf_planner,
                 sg_sim=sg_sim,
                 save_image=cfg.vlm.use_image,
+                segmenter=segmenter,
             )
             # bb = hydra.get_bb_from_sem(habitat_data)
             import ipdb; ipdb.set_trace()

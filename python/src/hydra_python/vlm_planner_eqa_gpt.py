@@ -102,7 +102,7 @@ class VLMPLannerEQAGPT:
         
         room_node_list = Enum('room_node_list', {id: name for id, name in zip(self.sg_sim.room_node_ids, self.sg_sim.room_node_names)}, type=str)
         region_node_list = Enum('region_node_list', {ac: ac for ac in self.sg_sim.region_node_ids}, type=str)
-        Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(self.vlm_pred_candidates+["NONE"], self.choices+["Not Sure."])}, type=str)
+        Answer_options = Enum('Answer_options', {token: choice for token, choice in zip(list(self.vlm_pred_candidates)+["NONE"], list(self.choices)+["Not Sure."])}, type=str)
         return frontier_node_list, room_node_list, region_node_list, object_node_list, Answer_options
 
 
@@ -136,7 +136,8 @@ class VLMPLannerEQAGPT:
     def get_answer(self, answer_response):
         image_path = None
         if self._use_image:
-            image_path = self._output_path / f"current_img_{self._t}.png"
+            # image_path = self._output_path / f"current_img_{self._t}.png"
+            image_path = self._output_path / f"current_img.png"
         user_prompt = """"Use your current camera view to answer the following question: 
                            QUESTION: {input}"""
         
@@ -233,4 +234,4 @@ class VLMPLannerEQAGPT:
         print(f'At t={self._t}: \n {step} \n {answer}')
 
         self._t += 1
-        return target_pose, (confidence_level>=4), confidence_level, answer.name
+        return target_pose, target_id, (confidence_level>=4), confidence_level, answer.name

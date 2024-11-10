@@ -40,7 +40,7 @@ def hydra_output_callback(pipeline, visualizer):
     if visualizer:
         visualizer.update_graph(pipeline.graph)
 
-def _take_step(pipeline, data, pose, segmenter, image_viz, is_eqa=False):
+def _take_step(pipeline, data, pose, labels, image_viz, is_eqa=False, segmenter=None):
     timestamp, world_t_body, q_wxyz = pose
     q_xyzw = np.roll(q_wxyz, -1) #changing to xyzw format
 
@@ -49,9 +49,13 @@ def _take_step(pipeline, data, pose, segmenter, image_viz, is_eqa=False):
     world_T_body[:3, :3] = R.from_quat(q_xyzw).as_matrix()
     data.set_pose(timestamp, world_T_body, is_eqa=is_eqa)
 
-    labels = segmenter(data.rgb) if segmenter else data.labels
-    if image_viz:
-        image_viz.show(data.colormap(labels))
+    # labels = segmenter(data.rgb) if segmenter else data.labels
+
+    if data.rgb is not None:
+        labels = segmenter(data.rgb) if segmenter else data.labels
+
+    # if image_viz:
+    #     image_viz.show(data.colormap(labels))
 
     if is_eqa:
         pose_cam = get_cam_pose_tsdf(data.get_depth_sensor_state())
@@ -174,7 +178,13 @@ def run_eqa(
         pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
 
         start = time.time()
-        _take_step(pipeline, habitat_data, pose, segmenter, image_viz=None, is_eqa=True)
+        
+        if habitat_data.rgb is not None:
+            labels = segmenter(habitat_data.rgb) if segmenter else habitat_data.labels
+        else:
+            labels = np.zeros((640, 480)).astype(int)
+            
+        _take_step(pipeline, habitat_data, pose, labels, image_viz=None, is_eqa=True, segmenter=segmenter)
         imgs_rgb.append(habitat_data.rgb)
         imgs_depth.append(habitat_data.depth)
         step_time += time.time()-start
@@ -227,7 +237,7 @@ def run_eqa(
             rr_logger.log_agent_data(agent_positions)
             rr_logger.log_agent_tf(agent_pos, agent_quat_wxyz)
             rr_logger.log_camera_tf(camera_pos, camera_quat_wxyz)
-            rr_logger.log_img_data(habitat_data)
+            rr_logger.log_img_data(habitat_data.rgb, labels)
             mesh_log_time += time.time()-start
             # if voxel_space:
             #     rr_logger.log_clear("world/voxel")

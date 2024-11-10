@@ -605,7 +605,8 @@ class SceneGraphSim:
             if self.save_image:
                 curr_img = Image.fromarray(np.concatenate(sampled_images[top_k_indices], axis=1))
                 # curr_img = Image.fromarray(sampled_images[best])
-                curr_img.save(self.output_path / f"current_img_{idx}.png")
+                # curr_img.save(self.output_path / f"current_img_{idx}.png")
+                curr_img.save(self.output_path / f"current_img.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
 
     def remove_close_positions(self, data, threshold):
