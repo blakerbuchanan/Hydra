@@ -199,6 +199,7 @@ class SceneGraphSim:
 
             if 'p' in node.id.category.lower():
                 self._region_node_ids.append(nodeid)
+                continue
 
             # if 'f' in node.id.category.lower():
             #     if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
@@ -243,6 +244,8 @@ class SceneGraphSim:
             if 'frontier' in source_type or 'frontier' in target_type: # ALL FRONTIERS for now, we add frontiers later
                 continue
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
+                continue
+            if 'region' in source_type or 'region' in target_type: # remove all region nodes and edges
                 continue
             
             if self.rr_logger is not None:
