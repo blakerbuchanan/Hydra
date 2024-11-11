@@ -14,6 +14,7 @@ data:
   semantic_annot_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d-train-semantic-annots-v0.2'
   scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
   eqa_dataset_enrich_labels: '/home/saumyas/Projects/semnav/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
+  use_semantic_data: True
 
 logging:
   output_parent_dir: results
@@ -64,6 +65,7 @@ habitat:
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
+  use_semantic_data: ${data.use_semantic_data}
   
 hydra:
   glog_level: 0

@@ -1,16 +1,11 @@
 # General
 seed: 42
-exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}_with_histobj_examples
+# exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}
+exp_name: test_gemini_with_new_planner
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
 sim_gpu: 0
-
-vlm:
-  name: 'gemini' # 'gemini'
-  use_image: True
-  enrich_sg_cfg:
-    enrich_room: False
 
 data:
   question_data_path: '/home/saumyas/semnav_workspace/data/explore-eqa_semnav/questions.csv'
@@ -18,7 +13,7 @@ data:
   semantic_annot_data_path: '/home/saumyas/semnav_workspace/data/hm3d-train-semantic-annots-v0.2'
   scene_data_path: '/home/saumyas/semnav_workspace/data/hm3d/train'
   eqa_dataset_enrich_labels: '/home/saumyas/semnav_workspace/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
-  use_semantic_data: False
+  use_semantic_data: True
 
 logging:
   output_parent_dir: results
@@ -36,15 +31,23 @@ scene_graph_sim:
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
-    use_siglip_for_images: False
+    use_siglip_for_images: True
     topk: 2
-    visualize_best_image: True
+    visualize_best_image: False
   detection:
     detection_model: GroundedSAM2
-    visualize_detections: False
+    visualize_detections: True
     return_mask: False
     min_detection_confidence: 0.75
-  img_subsample_freq: 1
+  img_subsample_freq: 2
+
+vlm:
+  name: 'gemini' # 'gemini'
+  use_image: True
+  use_done_action: False
+  use_history: False
+  early_exit: True
+  add_history: True
 
 planner:
   max_step_room_size_ratio: 3
@@ -56,14 +59,11 @@ habitat:
   inflation_radius: 0.25
   img_width: 640
   img_height: 480
-  camera_height: 0.8
-  camera_tilt_deg: -15
+  camera_height: 1.5
+  camera_tilt_deg: -30
   agent_z_offset: 0.
   hfov: 120
   z_offset: 0
-  get_clip_embeddings: False
-  get_siglip_embeddings: False
-  img_subsample_freq: 2
   use_semantic_data: ${data.use_semantic_data}
 
 
@@ -79,8 +79,8 @@ frontier_mapping:
   img_width: ${habitat.img_width}
   img_height: ${habitat.img_height}
   margin_w_ratio: 0.25
-  margin_h_ratio: 0.6
-  height_offset: 0.4
+  margin_h_ratio: 0.3 # 0.6
+  height_offset: 0.2 # 0.4
   range_height: [-0.2, 0.2]
   visual_prompt:
     cluster_threshold: 1.0
@@ -93,8 +93,8 @@ frontier_mapping:
     cam_offset: 0.6
     min_num_prompt_points: 2
     circle_radius: 18
-    frontier_min_neighbors: 3
-    frontier_max_neighbors: 4
+    frontier_min_neighbors: 2
+    frontier_max_neighbors: 3
 
 detic:
   vocabulary: 'custom'
