@@ -15,7 +15,7 @@ from hydra_python.frontier_mapping_eqa.tsdf import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
-from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_instruction_from_eqa_data
+from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_instruction_from_eqa_data, get_traj_len_from_poses
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import torch
 
@@ -148,6 +148,7 @@ def main(cfg):
         num_steps = 20
         succ = False
         planning_steps = 0
+        traj_length = 0.
         for cnt_step in range(num_steps):
             start = time.time()
             target_pose, target_id, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
@@ -204,6 +205,8 @@ def main(cfg):
                         sg_sim=sg_sim,
                         save_image=cfg.vlm.use_image,
                     )
+                    traj_length += get_traj_len_from_poses(poses)
+
                     ## If trajectory successfully executed
                     rr_logger.log_text_data(vlm_planner.full_plan)
                     planning_steps+=1
@@ -217,7 +220,8 @@ def main(cfg):
             'vlm steps': planning_steps,
             'overall steps': cnt_step,
             'is_confident': is_confident,
-            'confidence_level': confidence_level
+            'confidence_level': confidence_level,
+            'traj_length': traj_length
         }
         log_experiment_status(experiment_id, succ, metrics=metrics, filename=results_filename)
         habitat_data._sim.close(destroy=True)

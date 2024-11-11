@@ -280,5 +280,11 @@ def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_m
     
     return pipeline
 
+def get_traj_len_from_poses(poses):
+    pts = np.array([pt[1] for pt in poses])
+    deltas = np.diff(pts, axis=0)
+    segment_lengths = np.linalg.norm(deltas, axis=1)
+    return np.sum(segment_lengths)
+    
 if __name__ == "__main__":
     get_latest_image(Path("/home/saumyas/catkin_ws_semnav/src/hydra/outputs/test_obj_enrich/0_00006-HkseAnWCgqk_0"))
