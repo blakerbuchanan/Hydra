@@ -1,15 +1,56 @@
 Question0:
-  question: "Is there a trash can in the room?"
+  question: "Where is the trashcan?"
   choices:
-    A: 'Yes'
-    B: 'No'
-  answer: A
-  enrich_labels: "trach can."
+    A: 'Next to the cabinet'
+    B: 'Next to the open door'
+  answer: B
+  enrich_labels: "trash can."
 
 Question1:
   question: "Where is the backpack?"
   choices:
     A: "On the chair"
-    B: "On the floor"
+    B: "On the table"
   answer: A
   enrich_labels: "backpack."
+
+Question2:
+  question: "Is there a blue bowl on the kitchen counter?"
+  choices:
+    A: "Yes"
+    B: "No"
+  answer: A
+  enrich_labels: "kettle."
+
+Question3:
+  question: "Is the door to the lobby open?"
+  choices:
+    A: "Yes"
+    B: "No"
+  answer: A
+  enrich_labels: "door."
+
+Question4:
+  question: "Where is blue water bottle?"
+  choices:
+    A: "On the table"
+    B: "On the cabinet"
+    C: "On the floor"
+  answer: B
+  enrich_labels: "blue water bottle."
+
+Question5:
+  question: "Is there a backpack on the yellow couch?"
+  choices:
+    A: "Yes"
+    B: "No"
+  answer: A
+  enrich_labels: "backpack. yellow couch."
+
+Question6:
+  question: "Where is my backpack?"
+  choices:
+    A: "On the yellow chair"
+    B: "On the blue couch"
+  answer: A
+  enrich_labels: "yellow chair. blue couch."

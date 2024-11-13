@@ -142,6 +142,9 @@ object_labels:
   - 137
   - 138
   - 139
+  - 140
+  - 141
+  - 142
 surface_places_labels: [136]
 label_names:
   - {label: 0, name: .}
@@ -283,4 +286,7 @@ label_names:
   - {label: 136, name: floor}
   - {label: 137, name: ceiling}
   - {label: 138, name: door}
-  - {label: 139, name: other}
+  - {label: 139, name: refrigerator}
+  - {label: 140, name: coffee_machine}
+  - {label: 141, name: toaster}
+  - {label: 142, name: other}

@@ -98,6 +98,7 @@ def main(stretch_parameter_file, hydra_cfg):
             steps=parameters["agent"]["in_place_rotation_steps"],
             visualize=False,
         )
+    agent.sg_step()
 
     # print("============writing pickle file")
     # write_to_pickle(agent.obs_history, 'data_with_semantics')

@@ -29,6 +29,7 @@ detection:
 
 scene_graph_sim:
   save_image: ${vlm.use_image}
+  frontier_obj_thresh: 2.0
   enrich_rooms: True
   enrich_objects: False
   key_frame_selection:

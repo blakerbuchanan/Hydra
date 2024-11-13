@@ -43,7 +43,7 @@ vlm:
   name: "gpt-4o-2024-08-06"
   use_image: True
   use_done_action: False
-  use_history: False
+  add_history: False
   early_exit: True
 
 planner:

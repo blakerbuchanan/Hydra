@@ -1,8 +1,8 @@
 # General
 seed: 42
-question: 1
+question: 0
 # exp_name: test_stretch_hydra
-exp_name: stretch_${vlm.name}_question_${question}_backpack_img2
+exp_name: stretch_${vlm.name}_question_${question}_nov11_trash_door2
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${exp_name}_results
 gpu: 0 
@@ -25,14 +25,15 @@ detection:
 
 scene_graph_sim:
   save_image: ${vlm.use_image}
+  frontier_obj_thresh: 2.0
   enrich_rooms: True
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True
-    topk: 1
-    visualize_best_image: True
     choose_final_image: True
+    topk: 2
+    visualize_best_image: False
   detection:
     detection_model: GroundedSAM2
     visualize_detections: False
@@ -44,7 +45,7 @@ vlm:
   name: 'gpt-4o-mini' # 'gemini', 'gpt-4o-mini', 
   use_image: True
   use_done_action: False
-  use_history: False
+  add_history: True
   early_exit: True
 
 planner:

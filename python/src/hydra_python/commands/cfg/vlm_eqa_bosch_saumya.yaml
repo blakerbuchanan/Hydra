@@ -45,7 +45,6 @@ vlm:
   name: 'gemini' # 'gemini'
   use_image: True
   use_done_action: False
-  use_history: False
   early_exit: True
   add_history: True
 
