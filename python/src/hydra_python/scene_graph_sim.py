@@ -55,6 +55,7 @@ class SceneGraphSim:
         
         self.rr_logger = rr_logger
         self.thresh = 2.0
+        self.choose_final_image = self.sg_cfg.key_frame_selection.choose_final_image
 
         self.filter_out_objects = ['floor', 'ceiling']
 
@@ -199,7 +200,6 @@ class SceneGraphSim:
 
             if 'p' in node.id.category.lower():
                 self._region_node_ids.append(nodeid)
-                continue
 
             # if 'f' in node.id.category.lower():
             #     if self.is_relevant_frontier(np.array(attr['position']), self.curr_agent_pos)[0]:
@@ -245,8 +245,8 @@ class SceneGraphSim:
                 continue
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
-            if 'region' in source_type or 'region' in target_type: # remove all region nodes and edges
-                continue
+            # if 'region' in source_type or 'region' in target_type: # remove all region nodes and edges
+            #     continue
             
             if self.rr_logger is not None:
                 self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
@@ -568,6 +568,10 @@ class SceneGraphSim:
 
     def save_best_image(self, imgs_rgb):
 
+        img_idx = 0
+        while (self.output_path / f'current_img_{img_idx}.png').exists():
+            img_idx += 1
+
         if len(imgs_rgb)>0 and self.save_image and (self.sg_cfg.key_frame_selection.use_clip_for_images or self.sg_cfg.key_frame_selection.use_siglip_for_images):
             start = time.time()
             imgs_rgb = np.array(imgs_rgb)
@@ -590,10 +594,6 @@ class SceneGraphSim:
             best = np.argmax(probs)
             top_k_indices = np.argsort(probs)[::-1][:self.sg_cfg.key_frame_selection.topk]
 
-            img_idx = 0
-            while (self.output_path / f'current_img_{img_idx}.png').exists():
-                img_idx += 1
-
             if self.sg_cfg.key_frame_selection.visualize_best_image:
                 labeled_frames = []
                 for idx in range(len(sampled_images)):
@@ -607,10 +607,28 @@ class SceneGraphSim:
                 imageio.mimsave(self.output_path / f'images_with_clip_probs_{img_idx}.gif', labeled_frames, fps=0.5)
 
             if self.save_image:
-                curr_img = Image.fromarray(np.concatenate([*sampled_images[top_k_indices], imgs_rgb[-1]], axis=1))
-                # curr_img = Image.fromarray(sampled_images[best])
-                curr_img.save(self.output_path / f"current_img_{img_idx}.png")
+                rel_imgs = []
+                for idx in range(len(top_k_indices)):
+                    color_img = sampled_images[top_k_indices[idx]].copy()
+                    cv2.putText(color_img, str(f"Image {idx+1}"), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
+                    rel_imgs.append(color_img)
+                # adding the last image
+                if self.choose_final_image:
+                    color_img = imgs_rgb[-1].copy()
+                    cv2.putText(color_img, str(f"Image {len(top_k_indices)+1}"), (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 1, cv2.LINE_AA)
+                    rel_imgs.append(color_img)
+                
+                final_img = Image.fromarray(np.concatenate(rel_imgs, axis=1))
+
+                # final_img = Image.fromarray(np.concatenate([*sampled_images[top_k_indices], imgs_rgb[-1]], axis=1))
+                final_img.save(self.output_path / f"current_img_{img_idx}.png")
             print(f"===========time taken for CLIP/SigLIP emb: {time.time()-start}")
+        
+        # Do not use CLIP or SigClip but save the final image (indexed)
+        if len(imgs_rgb)>0 and self.save_image and (not self.sg_cfg.key_frame_selection.use_clip_for_images) and (not self.sg_cfg.key_frame_selection.use_siglip_for_images):
+            final_img = Image.fromarray(imgs_rgb[-1])
+            # final_img = Image.fromarray(np.concatenate([*sampled_images[top_k_indices], imgs_rgb[-1]], axis=1))
+            final_img.save(self.output_path / f"current_img_{img_idx}.png")
 
     def remove_close_positions(self, data, threshold):
         # Sort the list by confidence in descending order

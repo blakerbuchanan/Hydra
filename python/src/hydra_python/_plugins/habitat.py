@@ -613,7 +613,8 @@ class HabitatInterface:
 
         # desired path is in world frame of eqa
         desired_path_habitat = pos_normal_to_habitat(path_normal)
-        target_habitat = pos_normal_to_habitat(target_normal)
+        if target_normal is not None:
+            target_habitat = pos_normal_to_habitat(target_normal)
 
         # diff = desired_path_habitat[-1] - desired_path_habitat[0]
         # desired_heading = np.arctan2(-diff[0],-diff[2])
@@ -625,8 +626,11 @@ class HabitatInterface:
         yaw_prev = current_heading
         pos_prev = current_pos.copy()
         for i in range(len(desired_path_habitat)):
-            # diff = desired_path_habitat[i] - pos_prev # head to the next pose
-            diff = target_habitat - desired_path_habitat[i] # head to the target pose
+            
+            if target_normal is None:
+                diff = desired_path_habitat[i] - pos_prev # head to the next pose
+            else:
+                diff = target_habitat - desired_path_habitat[i] # head to the target pose
             desired_heading = np.arctan2(-diff[0],-diff[2])
             # heading_sample_range = [desired_heading-30*np.pi/180, desired_heading+30*np.pi/180]
             # desired_heading = np.random.uniform(heading_sample_range[0], heading_sample_range[1])
@@ -690,6 +694,45 @@ class HabitatInterface:
             poses.append((int(i*dt*1e9), pos_hab, quat_habitat_wxyz))
         return poses
 
+    def get_trajectory_explore_floor_eqa(self, init_pts, camera_tilt_deg):
+        
+        node_sequence = []
+        for x in self.G:
+            if np.abs(self.G.nodes[x]["pos"][1] - init_pts[1]) < 0.1:
+                node_sequence.append(x)
+        
+        random.shuffle(node_sequence)
+        path = habitat_sim.nav.ShortestPath()
+        
+        # Compute the shortest path
+        
+        traj = []
+        for i in range(len(node_sequence) - 1):
+            path.requested_start = self.G.nodes[node_sequence[i]]["pos"]
+            path.requested_end = self.G.nodes[node_sequence[i+1]]["pos"]
+            found_path = self.pathfinder.find_path(path)
+            if found_path:
+                traj.extend(path.points)
+        desired_path_habitat = np.array(traj).squeeze()
+
+        agent = self._sim.get_agent(0)  # Assuming agent ID 0
+        current_pos = agent.get_state().position
+
+        desired_path_habitat[:,1] = current_pos[1]
+        pos_prev = current_pos.copy()
+        poses = []
+        dt = 0.2
+        for i in range(len(desired_path_habitat)):
+            diff = desired_path_habitat[i] - pos_prev # head to the next pose
+            desired_heading = np.arctan2(-diff[0],-diff[2])
+            des_quat_xyzw = _angle_to_rotation_habitat(desired_heading, camera_tilt_deg)
+            des_quat_wxyz = np.roll(des_quat_xyzw, 1)
+            pos_prev = desired_path_habitat[i].copy()
+            poses.append((int(i*dt*1e9), desired_path_habitat[i], des_quat_wxyz))
+
+         # project to agent plane, check        
+        return poses
+    
     def get_init_poses_hydra(self, pos_hab, angle, camera_tilt_deg):
         # pose is in habitat frame, return (pose, quat_wxyz)
         quat_hab_xyzw = _angle_to_rotation_habitat(angle, camera_tilt_deg)

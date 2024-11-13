@@ -32,6 +32,7 @@ scene_graph_sim:
     use_siglip_for_images: True
     topk: 1
     visualize_best_image: True
+    choose_final_image: True
   detection:
     detection_model: GroundedSAM2
     visualize_detections: False

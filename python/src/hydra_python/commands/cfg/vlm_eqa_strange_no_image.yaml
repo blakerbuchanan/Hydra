@@ -2,8 +2,7 @@
 seed: 42
 # exp_name: test_palnner
 # exp_name: test_view
-exp_name: explore_eqa_${vlm.name}_noCLIP
-# exp_name: explore_eqa_${vlm.name}_no_image
+exp_name: explore_eqa_${vlm.name}_no_image
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
@@ -33,7 +32,7 @@ scene_graph_sim:
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
-    use_siglip_for_images: False
+    use_siglip_for_images: True
     topk: 2
     visualize_best_image: False
     choose_final_image: True
@@ -46,7 +45,7 @@ scene_graph_sim:
   
 vlm:
   name: "gpt-4o-2024-08-06" # 'gemini', 'gpt-4o-mini', 'gpt-4o-2024-08-06'
-  use_image: True
+  use_image: False
   use_done_action: False
   early_exit: True
   add_history: True

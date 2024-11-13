@@ -44,6 +44,7 @@ def should_skip_experiment(experiment_id, filename='experiment_status.json'):
     return experiment_id in data
 
 def main(cfg):
+    exploration_type = "frontiers" # 'frontiers
     questions_data, init_pose_data = load_eqa_data(cfg.data)
 
     output_path = cfg.output_path
@@ -57,7 +58,7 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [0, 3, 11, 64, 77, 78, 81, 89, 98]:
+        if question_ind in [0, 1, 2, 11, 77, 78, 81, 89]:
             continue
 
         question_data = questions_data[question_ind]
@@ -113,9 +114,23 @@ def main(cfg):
             clean_ques_ans=clean_ques_ans,
             enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
 
-        # Get poses for hydra at init view
+
+        # Explore the whole floor
+        # poses = habitat_data.get_trajectory_explore_floor_eqa(init_pts, cfg.habitat.camera_tilt_deg)
+        # # poses = habitat_data.get_trajectory_from_path_habitat_frame2(None, desired_path, init_angle, cfg.habitat.camera_tilt_deg)
+        # run_eqa(
+        #     pipeline,
+        #     habitat_data,
+        #     poses,
+        #     output_path=question_path,
+        #     rr_logger=rr_logger,
+        #     tsdf_planner=tsdf_planner,
+        #     sg_sim=sg_sim,
+        #     save_image=cfg.vlm.use_image,
+        # )
+
+        # Goto init state
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
-        # Get scene graph for init view
         run_eqa(
             pipeline,
             habitat_data,
@@ -134,7 +149,7 @@ def main(cfg):
                 vlm_question, vlm_pred_candidates, choices, answer, 
                 question_path)
         elif 'gemini' in cfg.vlm.name.lower():
-            vlm_planner = hydra.VLMPLannerEQAGemini(
+            vlm_planner = hydra.VLMPLannerEQAGeminiSayPlan(
                 cfg.vlm,
                 sg_sim,
                 vlm_question, vlm_pred_candidates, choices, answer, 
@@ -145,7 +160,45 @@ def main(cfg):
         click.secho(f'Index:{question_ind} Scene: {question_data["scene"]} Floor: {question_data["floor"]}',fg="green",)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
-        num_steps = 20
+        click.secho(f"========STARTING FRONTIER-BASED EXPLORATION=================",fg="blue",)
+        ## Random frontier based exploration
+        while len(tsdf_planner.frontiers_to_sample) > 2:
+            current_heading = habitat_data.get_heading_angle()
+            _, target_pose = tsdf_planner.sample_frontier()
+            
+            # # Create a path object
+            agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
+            current_pos = agent.get_state().position
+            frontier_habitat = pos_normal_to_habitat(target_pose)
+            frontier_habitat[1] = current_pos[1]
+            path = habitat_sim.nav.ShortestPath()
+            path.requested_start = current_pos
+            path.requested_end = frontier_habitat
+            # Compute the shortest path
+            found_path = habitat_data.pathfinder.find_path(path)
+            if found_path:
+                desired_path = pos_habitat_to_normal(np.array(path.points)[:-1])
+                rr_logger.log_traj_data(desired_path)
+                rr_logger.log_target_poses(target_pose)
+            else:
+                click.secho(f"Cannot find navigable path:",fg="red",)
+                continue
+
+            poses = habitat_data.get_trajectory_from_path_habitat_frame2(target_pose, desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+            run_eqa(
+                pipeline,
+                habitat_data,
+                poses,
+                output_path=question_path,
+                rr_logger=rr_logger,
+                tsdf_planner=tsdf_planner,
+                sg_sim=sg_sim,
+                save_image=cfg.vlm.use_image,
+            )
+
+        click.secho(f"==================FINISHED FRONTIER-BASED EXPLORATION=================",fg="blue",)
+        click.secho(f"==================START vlm PLANNING=================",fg="blue",)
+        num_steps = 20  
         succ = False
         planning_steps = 0
         traj_length = 0.
@@ -170,29 +223,23 @@ def main(cfg):
 
             if target_pose is not None:
 
-                # desired_path = tsdf_planner.sample_frontier()
-                current_heading = habitat_data.get_heading_angle()
-                # desired_path = tsdf_planner.path_to_frontier(target_pose) # not being used anymore
-
                 agent = habitat_data._sim.get_agent(0)  # Assuming agent ID 0
                 current_pos = agent.get_state().position
-                frontier_habitat = pos_normal_to_habitat(target_pose)
-                frontier_habitat[1] = current_pos[1]
-                path = habitat_sim.nav.ShortestPath()
-                path.requested_start = current_pos
-                path.requested_end = frontier_habitat
-                # Compute the shortest path
-                found_path = habitat_data.pathfinder.find_path(path)
+                object_habitat = pos_normal_to_habitat(target_pose)
+                object_habitat[1] = current_pos[1]
 
-                if found_path:
-                    desired_path = pos_habitat_to_normal(np.array(path.points)[:-1])
-                    rr_logger.log_traj_data(desired_path)
-                    rr_logger.log_target_poses(target_pose)
-                else:
-                    click.secho(f"Cannot find navigable path at {cnt_step}. Continuing..",fg="red",)
-                    continue
+                rr_logger.log_target_poses(target_pose)
 
-                poses = habitat_data.get_trajectory_from_path_habitat_frame2(target_pose, desired_path, current_heading, cfg.habitat.camera_tilt_deg)
+                found_navigable_point=False
+                while(not found_navigable_point):
+                    des_pos = habitat_data.pathfinder.get_random_navigable_point_near(object_habitat, 1.0)
+                    if not np.any(np.isnan(des_pos)) and np.abs(des_pos[1]-init_pts[1])<1.0:
+                        found_navigable_point = True
+                    
+                
+                diff = object_habitat - des_pos # head to the next pose
+                desired_heading = np.arctan2(-diff[0],-diff[2])
+                poses = habitat_data.get_init_poses_eqa(des_pos, desired_heading, cfg.habitat.camera_tilt_deg)
                 if poses is not None:
                     click.secho(f"Executing trajectory at overall step {cnt_step} and vlm step {planning_steps}",fg="yellow",)
                     run_eqa(
@@ -205,7 +252,7 @@ def main(cfg):
                         sg_sim=sg_sim,
                         save_image=cfg.vlm.use_image,
                     )
-                    traj_length += get_traj_len_from_poses(poses)
+                    traj_length += np.linalg.norm(diff)
 
                     ## If trajectory successfully executed
                     rr_logger.log_text_data(vlm_planner.full_plan)
@@ -217,8 +264,8 @@ def main(cfg):
                 click.secho(f"VLM planner failed at overall step {cnt_step}. Continuing...",fg="red",)
         
         metrics = {
-            'vlm_steps': planning_steps,
-            'overall_steps': cnt_step,
+            'vlm steps': planning_steps,
+            'overall steps': cnt_step,
             'is_confident': is_confident,
             'confidence_level': confidence_level,
             'traj_length': traj_length

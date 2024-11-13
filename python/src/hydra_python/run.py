@@ -11,6 +11,7 @@ from PIL import Image
 from scipy.special import softmax
 import threading
 from hydra_python.utils import hydra_get_mesh
+from tqdm import tqdm
 
 class ImageVisualizer:
     """GUI for showing images."""
@@ -173,7 +174,7 @@ def run_eqa(
     step_time = frontier_update_time = voxel_log_time = sg_update_time = mesh_log_time = 0
     # idx=0
     os.makedirs(output_path/'traj0', exist_ok=True)
-    for pose in pose_source:
+    for pose in tqdm(pose_source, desc='Executing traj'):
         pipeline.graph.save(output_path / "dsg.json", False)
         pipeline.graph.save_filtered(output_path / "filtered_dsg.json", False)
 

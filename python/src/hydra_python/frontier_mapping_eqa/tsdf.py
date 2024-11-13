@@ -608,7 +608,7 @@ class TSDFPlanner:
         explored_reachable_normal = explored_reachable * self._voxel_size + self._vol_origin[:2]
         
         unoccupied_reachable_normal = np.concatenate([unoccupied_reachable_normal, np.full((unoccupied_reachable_normal.shape[0],1), pts[2]+self._height_offset)],1)
-        frontiers_unexplored_normal = np.concatenate([frontiers_unexplored_normal, np.full((frontiers_unexplored_normal.shape[0],1), pts[2]+self._height_offset)],1)
+        self.frontiers_unexplored_normal = np.concatenate([frontiers_unexplored_normal, np.full((frontiers_unexplored_normal.shape[0],1), pts[2]+self._height_offset)],1)
         explored_reachable_normal = np.concatenate([explored_reachable_normal, np.full((explored_reachable_normal.shape[0],1), pts[2]+self._height_offset)],1)
 
         # self._rr_logger.log_3d_frontier_data(unoccupied_reachable_normal, frontiers_unexplored_normal, explored_reachable_normal)
@@ -634,7 +634,7 @@ class TSDFPlanner:
         
         rr.log(f"world/tsdf_unoccupied", rr.Points3D(unoccupied_reachable_normal, colors=[255, 0, 0], radii=0.06))
         rr.log(f"world/tsdf_explored", rr.Points3D(explored_reachable_normal, colors=[200, 180, 150], radii=0.08))
-        rr.log(f"world/tsdf_frontiers", rr.Points3D(frontiers_unexplored_normal, colors=[255, 255, 255], radii=0.08))
+        rr.log(f"world/tsdf_frontiers", rr.Points3D(self.frontiers_unexplored_normal, colors=[255, 255, 255], radii=0.08))
         rr.log(f"world/tsdf_frontiers_clustered", rr.Points3D(self.frontier_to_sample_normal, colors=[0, 0, 0], radii=0.11))
     
     def cluster_frontiers(self, frontiers):
