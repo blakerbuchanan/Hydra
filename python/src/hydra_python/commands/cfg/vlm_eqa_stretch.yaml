@@ -31,9 +31,9 @@ scene_graph_sim:
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True
-    choose_final_image: True
     topk: 2
     visualize_best_image: False
+    choose_final_image: True
   detection:
     detection_model: GroundedSAM2
     visualize_detections: False
