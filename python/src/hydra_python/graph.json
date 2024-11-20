@@ -1,0 +1,1022 @@
+{
+    "directed": true,
+    "multigraph": false,
+    "graph": {},
+    "nodes": [
+        {
+            "position": [
+                -2.928846836090088,
+                -1.5354466438293457,
+                4.291640281677246
+            ],
+            "name": "agent",
+            "layer": 2,
+            "timestamp": 8.0,
+            "id": "agent_0"
+        },
+        {
+            "position": [
+                -2.928846836090088,
+                -1.5354466438293457,
+                4.291640281677246
+            ],
+            "name": "agent",
+            "layer": 2,
+            "timestamp": 18.0,
+            "id": "agent_1"
+        },
+        {
+            "position": [
+                0.7173774451867525,
+                -1.427691559595087,
+                4.093339209322317
+            ],
+            "name": "wall",
+            "layer": 2,
+            "label": 2,
+            "id": "object_1"
+        },
+        {
+            "position": [
+                -1.3145675409224726,
+                0.6233566237102833,
+                4.390543697341796
+            ],
+            "name": "wall",
+            "layer": 2,
+            "label": 2,
+            "id": "object_2"
+        },
+        {
+            "position": [
+                0.29631025578046954,
+                0.8839042588721874,
+                5.120298507601716
+            ],
+            "name": "wall",
+            "layer": 2,
+            "label": 2,
+            "id": "object_3"
+        },
+        {
+            "position": [
+                -1.218451357876081,
+                -0.1495020510194524,
+                4.035519566560656
+            ],
+            "name": "door frame",
+            "layer": 2,
+            "label": 11,
+            "id": "object_5"
+        },
+        {
+            "position": [
+                -1.173992309771793,
+                -1.0243533975641492,
+                3.9933173656463623
+            ],
+            "name": "door frame",
+            "layer": 2,
+            "label": 11,
+            "id": "object_6"
+        },
+        {
+            "position": [
+                -1.3984181613523243,
+                0.7324040834668019,
+                3.8679789762533208
+            ],
+            "name": "door",
+            "layer": 2,
+            "label": 12,
+            "id": "object_7"
+        },
+        {
+            "position": [
+                -0.06808321975705871,
+                0.6727805688561671,
+                4.110408577786024
+            ],
+            "name": "door",
+            "layer": 2,
+            "label": 12,
+            "id": "object_8"
+        },
+        {
+            "position": [
+                -2.7255727503318887,
+                1.556115455186399,
+                2.8413180250265
+            ],
+            "name": "rug",
+            "layer": 2,
+            "label": 23,
+            "id": "object_9"
+        },
+        {
+            "position": [
+                -2.4408290539032373,
+                -1.3264817595481873,
+                2.8507287166057487
+            ],
+            "name": "rug",
+            "layer": 2,
+            "label": 23,
+            "id": "object_10"
+        },
+        {
+            "position": [
+                0.19562005125559292,
+                0.86074936573322,
+                4.539575760181133
+            ],
+            "name": "wall panel",
+            "layer": 2,
+            "label": 36,
+            "id": "object_11"
+        },
+        {
+            "position": [
+                0.26094143250483576,
+                0.8591747233423136,
+                3.1994844291169766
+            ],
+            "name": "wall panel",
+            "layer": 2,
+            "label": 36,
+            "id": "object_12"
+        },
+        {
+            "position": [
+                -1.8073022104799747,
+                -1.8491656966507435,
+                3.391434627274672
+            ],
+            "name": "couch",
+            "layer": 2,
+            "label": 37,
+            "id": "object_13"
+        },
+        {
+            "position": [
+                -0.2431937643725957,
+                -2.053557527916772,
+                3.5525005161762238
+            ],
+            "name": "balustrade",
+            "layer": 2,
+            "label": 56,
+            "id": "object_14"
+        },
+        {
+            "position": [
+                -2.82537225789802,
+                1.7482257027958714,
+                3.2955242589462634
+            ],
+            "name": "dining table",
+            "layer": 2,
+            "label": 63,
+            "id": "object_15"
+        },
+        {
+            "position": [
+                -3.1460984713995637,
+                1.175041208516306,
+                3.3636543377121884
+            ],
+            "name": "dining chair",
+            "layer": 2,
+            "label": 64,
+            "id": "object_16"
+        },
+        {
+            "position": [
+                -2.669814042642083,
+                2.292943212347971,
+                3.619478920815696
+            ],
+            "name": "dining chair",
+            "layer": 2,
+            "label": 64,
+            "id": "object_17"
+        },
+        {
+            "position": [
+                -1.6057913524133187,
+                2.1901094886991714,
+                3.5817654150503655
+            ],
+            "name": "kitchen counter",
+            "layer": 2,
+            "label": 70,
+            "id": "object_18"
+        },
+        {
+            "position": [
+                -1.2948540598154068,
+                2.340904948115349,
+                4.692485451698303
+            ],
+            "name": "kitchen cabinet",
+            "layer": 2,
+            "label": 73,
+            "id": "object_19"
+        },
+        {
+            "position": [
+                -1.635717101480769,
+                2.504793931697977,
+                3.270046812364425
+            ],
+            "name": "mini fridge",
+            "layer": 2,
+            "label": 84,
+            "id": "object_20"
+        },
+        {
+            "position": [
+                -1.854737854003906,
+                4.386632156372071,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_0"
+        },
+        {
+            "position": [
+                0.7452621459960938,
+                -0.6133678436279295,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_1"
+        },
+        {
+            "position": [
+                -2.7547378540039062,
+                0.8866321563720705,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_2"
+        },
+        {
+            "position": [
+                -2.354737854003906,
+                -1.9133678436279293,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_3"
+        },
+        {
+            "position": [
+                -0.7547378540039062,
+                0.5866321563720707,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_4"
+        },
+        {
+            "position": [
+                -2.2547378540039062,
+                2.6866321563720703,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_5"
+        },
+        {
+            "position": [
+                -3.1547378540039057,
+                -0.6133678436279295,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_6"
+        },
+        {
+            "position": [
+                -0.054737854003905184,
+                -1.8133678436279297,
+                3.1926020000000004
+            ],
+            "name": "frontier",
+            "layer": 2,
+            "id": "frontier_7"
+        },
+        {
+            "position": [
+                -3.8113925457000732,
+                -1.648734211921692,
+                3.795569658279419
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_8"
+        },
+        {
+            "position": [
+                -4.260738372802734,
+                -0.8640939593315125,
+                3.6828858852386475
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_9"
+        },
+        {
+            "position": [
+                0.4826388955116272,
+                -2.6083333492279053,
+                4.593055725097656
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_10"
+        },
+        {
+            "position": [
+                0.3992537260055542,
+                -2.5778608322143555,
+                3.6440298557281494
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_11"
+        },
+        {
+            "position": [
+                -0.3271084427833557,
+                -2.013855457305908,
+                5.069277286529541
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_12"
+        },
+        {
+            "position": [
+                -1.194776177406311,
+                -2.170895576477051,
+                4.736567497253418
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_13"
+        },
+        {
+            "position": [
+                -0.012318842113018036,
+                0.05144927650690079,
+                4.92391300201416
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_14"
+        },
+        {
+            "position": [
+                -0.7716667056083679,
+                0.6383333206176758,
+                5.006666660308838
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_15"
+        },
+        {
+            "position": [
+                -1.0109755992889404,
+                -0.5792682766914368,
+                5.115853786468506
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_16"
+        },
+        {
+            "position": [
+                -0.2805970311164856,
+                -0.4567164182662964,
+                4.973880767822266
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_17"
+        },
+        {
+            "position": [
+                -0.6305243372917175,
+                -0.5638576745986938,
+                3.8391387462615967
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_18"
+        },
+        {
+            "position": [
+                -1.1435483694076538,
+                -1.2951613664627075,
+                5.157526969909668
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_19"
+        },
+        {
+            "position": [
+                -0.6704545617103577,
+                -0.6829545497894287,
+                4.5215911865234375
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_20"
+        },
+        {
+            "position": [
+                -3.2015151977539062,
+                3.0550506114959717,
+                3.587878942489624
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_21"
+        },
+        {
+            "position": [
+                -2.739706039428711,
+                3.763725519180298,
+                3.781862735748291
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_22"
+        },
+        {
+            "position": [
+                -3.298058271408081,
+                2.9990291595458984,
+                4.772815704345703
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_23"
+        },
+        {
+            "position": [
+                -2.876540422439575,
+                3.757582902908325,
+                4.7225117683410645
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_24"
+        },
+        {
+            "position": [
+                -1.5639535188674927,
+                3.340697765350342,
+                4.113565921783447
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_25"
+        },
+        {
+            "position": [
+                -0.9584000110626221,
+                2.934800148010254,
+                4.822000026702881
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_26"
+        },
+        {
+            "position": [
+                -3.5445783138275146,
+                0.9885542392730713,
+                4.583132743835449
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_27"
+        },
+        {
+            "position": [
+                -4.130434989929199,
+                0.44492754340171814,
+                4.983333587646484
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_28"
+        },
+        {
+            "position": [
+                -3.994374990463257,
+                0.550000011920929,
+                3.695625066757202
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_29"
+        },
+        {
+            "position": [
+                -4.413815975189209,
+                0.00723684299737215,
+                4.263815879821777
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_30"
+        },
+        {
+            "position": [
+                -3.4839935302734375,
+                2.0226073265075684,
+                4.778712749481201
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_31"
+        },
+        {
+            "position": [
+                -3.5068862438201904,
+                1.88772451877594,
+                3.592514991760254
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_32"
+        },
+        {
+            "position": [
+                -4.100746154785156,
+                2.5758707523345947,
+                3.9072139263153076
+            ],
+            "name": "frontier",
+            "layer": 3,
+            "id": "frontier_33"
+        },
+        {
+            "position": [
+                -1.5933333623740409,
+                0.2777777769499355,
+                4.140000051922268
+            ],
+            "name": "kitchen",
+            "layer": 4,
+            "label": 0,
+            "id": "room_0"
+        },
+        {
+            "position": [
+                -1.5933333623740409,
+                0.2777777769499355,
+                4.140000051922268
+            ],
+            "name": "building",
+            "layer": 5,
+            "label": 22,
+            "id": "building_0"
+        }
+    ],
+    "links": [
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_0",
+            "target": "object_20"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_1",
+            "target": "object_1"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_1",
+            "target": "object_8"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_1",
+            "target": "object_12"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_1",
+            "target": "object_14"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_2"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_7"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_9"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_15"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_16"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_17"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_18"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_2",
+            "target": "object_20"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_3",
+            "target": "object_6"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_3",
+            "target": "object_10"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_3",
+            "target": "object_13"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_2"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_5"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_6"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_7"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_8"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_11"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_12"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_4",
+            "target": "object_18"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_9"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_15"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_16"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_17"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_18"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_19"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_5",
+            "target": "object_20"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_6",
+            "target": "object_10"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_6",
+            "target": "object_13"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_6",
+            "target": "object_16"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_7",
+            "target": "object_1"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_7",
+            "target": "object_6"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_7",
+            "target": "object_13"
+        },
+        {
+            "source_name": "frontier",
+            "target_name": "object",
+            "type": "frontier-to-object",
+            "source": "frontier_7",
+            "target": "object_14"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_7"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_8"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_12"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_3"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_11"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_9"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_2"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_15"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_16"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_6"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_5"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_19"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_14"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_17"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_18"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_20"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_10"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_13"
+        },
+        {
+            "source_name": "room",
+            "target_name": "object",
+            "type": "room-to-object",
+            "source": "room_0",
+            "target": "object_1"
+        },
+        {
+            "source_name": "room",
+            "target_name": "agent",
+            "type": "room-to-agent",
+            "source": "room_0",
+            "target": "agent_0"
+        },
+        {
+            "source_name": "room",
+            "target_name": "agent",
+            "type": "room-to-agent",
+            "source": "room_0",
+            "target": "agent_1"
+        },
+        {
+            "source_name": "building",
+            "target_name": "room",
+            "type": "building-to-room",
+            "source": "building_0",
+            "target": "room_0"
+        }
+    ]
+}

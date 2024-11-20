@@ -28,6 +28,7 @@ scene_graph_sim:
   frontier_obj_thresh: 2.0
   enrich_rooms: True
   enrich_objects: False
+  include_regions: False
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True

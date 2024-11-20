@@ -1,33 +1,82 @@
 import pickle, json
 import numpy as np
+from hydra_python.utils import load_eqa_data
+from omegaconf import OmegaConf
 
 if __name__ == "__main__":
-    filepath2 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view/'
-    filepath1 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view_traj_len/'
+    # filepath2 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view/'
+    # filepath1 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view_traj_len/'
 
-    outfile = filepath1 + 'metrics_succ.json'
-    with open(filepath1+'gpt-4o-2024-08-06_images_True.json', 'r') as file:
-        data1 = json.load(file)
+    cfg_path = "/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa_strange.yaml"
+    cfg = OmegaConf.load(cfg_path)
+    OmegaConf.resolve(cfg)
 
-    with open(filepath2+'gpt-4o-2024-08-06_images_True.json', 'r') as file:
-        data2 = json.load(file)
-    
+    questions_data, init_pose_data = load_eqa_data(cfg.data)
+
+    filepath = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view/'
+    outfile = filepath + 'metrics_new_succ.json'
+    outfile2 = filepath + 'task_categories.json'
+
+    with open(filepath+'gpt-4o-2024-08-06_images_True_new.json', 'r') as file:
+        data = json.load(file)
+
     num_success, planning_steps_all_trajs, length_all_trajs = 0, 0, 0
-    total_trajs = len(data1.keys())
+    total_trajs = len(data.keys())
 
-    for k, v in data1.items():
+    identification, existence, count, state, location = 0, 0, 0, 0, 0
+    identification_succ, existence_succ, count_succ, state_succ, location_succ = 0, 0, 0, 0, 0
+    for question_ind, question_data in enumerate(questions_data):
+        experiment_id = f'{question_ind}_{question_data["scene"]}_{question_data["floor"]}'
+        if experiment_id in data.keys():
+            if question_data['label'] == 'identification':
+                identification += 1
+                if data[experiment_id]['Success']:
+                    identification_succ += 1
+
+            elif question_data['label'] == 'existence':
+                existence+=1
+                if data[experiment_id]['Success']:
+                    existence_succ += 1
+            elif question_data['label'] == 'count':
+                count+=1
+                if data[experiment_id]['Success']:
+                    count_succ += 1
+            elif question_data['label'] == 'state':
+                state+=1
+                if data[experiment_id]['Success']:
+                    state_succ += 1
+            elif question_data['label'] == 'location':
+                location+=1
+                if data[experiment_id]['Success']:
+                    location_succ += 1
+            else:
+                raise NotImplementedError("invalid question type")
+
+
+    type_results = {}
+    type_results['identification'] = identification
+    type_results['existence'] = existence
+    type_results['count'] = count
+    type_results['state'] = state
+    type_results['location'] = location
+    type_results['total_trajs'] = total_trajs
+
+    type_results['identification_succ'] = identification_succ/identification*100
+    type_results['existence_succ'] = existence_succ/existence*100
+    type_results['count_succ'] = count_succ/count*100
+    type_results['state_succ'] = state_succ/state*100
+    type_results['location_succ'] = location_succ/location*100
+
+    print(f"Saving file: {outfile2}")
+    with open(outfile2, 'w') as file:
+        json.dump(type_results, file, indent=4)
+    print(f"Saved file: {outfile2}")
+
+    for k, v in data.items():
         if v['Success']:
             num_success += 1
             length_all_trajs += v['metrics']['traj_length']
             planning_steps_all_trajs += v['metrics']['vlm_steps']
-
-    for k, v in data2.items():
-        if 'traj_length' in v['metrics'].keys():
-            total_trajs += 1
-            if v['Success']:
-                num_success += 1
-                length_all_trajs += v['metrics']['traj_length']
-                planning_steps_all_trajs += v['metrics']['vlm steps']
 
     metrics = {}
     metrics['length_all_trajs'] = length_all_trajs

@@ -46,6 +46,10 @@ class SceneGraphSim:
         self.enrich_object_labels = enrich_object_labels
 
         self.save_image = self.sg_cfg.save_image
+        self.include_regions = self.sg_cfg.include_regions
+        self.no_scene_graph = self.sg_cfg.no_scene_graph
+        self.enrich_frontiers = self.sg_cfg.enrich_frontiers
+
         self.output_path = output_path
         self._detector_path = output_path / "detector"
         self._sg_path = output_path / "filtered_dsg.json"
@@ -214,6 +218,7 @@ class SceneGraphSim:
             
             self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
         
+        self._room_names = self._room_ids.copy()
         self.bb_info = {
             'object_node_positions': object_node_positions,
             'bb_half_sizes': bb_half_sizes,
@@ -246,8 +251,6 @@ class SceneGraphSim:
                 continue
             if 'agent' in source_type and 'agent' in target_type: # agent->agent
                 continue
-            # if 'region' in source_type or 'region' in target_type: # remove all region nodes and edges
-            #     continue
             
             if self.rr_logger is not None:
                 self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=np.array(source_node.attributes.position), node_pos_target=np.array(target_node.attributes.position))
@@ -278,19 +281,20 @@ class SceneGraphSim:
                 relevent_node_ids = self.filtered_obj_ids[relevant_objs]
                 relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
 
-                edge_type = 'frontier-to-object'
-                
-                for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
-                    edgeid = f'{nodeid}-to-{obj_id}'
+                if self.enrich_frontiers:
+                    edge_type = 'frontier-to-object'
+                    
+                    for obj_id, obj_pos in zip(relevent_node_ids,relevant_obj_pos):
+                        edgeid = f'{nodeid}-to-{obj_id}'
 
-                    self.filtered_netx_graph.add_edges_from([(
-                        nodeid, obj_id,
-                        {'source_name': 'frontier',
-                        'target_name': 'object',
-                        'type': edge_type}
-                    )])
-                    if self.rr_logger is not None:
-                        self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
+                        self.filtered_netx_graph.add_edges_from([(
+                            nodeid, obj_id,
+                            {'source_name': 'frontier',
+                            'target_name': 'object',
+                            'type': edge_type}
+                        )])
+                        if self.rr_logger is not None:
+                            self.rr_logger.log_hydra_graph(is_node=False, edge_type=edge_type, edgeid=edgeid, node_pos_source=frontier_nodes[i], node_pos_target=obj_pos)
 
     def add_room_labels_to_sg(self):
         self._room_names = []
@@ -511,8 +515,11 @@ class SceneGraphSim:
     def get_current_semantic_state_str(self):
         agent_pos = self.filtered_netx_graph.nodes[self.curr_agent_id]['position']
         agent_loc_str = f'The agent is currently at node {self.curr_agent_id} at position {agent_pos}'
-        agent_place_ids = [place_id for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id)]
-        room_id = [room_id for room_id in self.filtered_netx_graph.predecessors(agent_place_ids[0])]
+        if self.include_regions:
+            agent_place_ids = [place_id for place_id in self.filtered_netx_graph.predecessors(self.curr_agent_id)]
+            room_id = [room_id for room_id in self.filtered_netx_graph.predecessors(agent_place_ids[0])]
+        else:
+            room_id = [room_id for room_id in self.filtered_netx_graph.predecessors(self.curr_agent_id)]
         
         room_str = ''
         if len(room_id) > 0:
@@ -524,16 +531,21 @@ class SceneGraphSim:
     def update(self, imgs_rgb=[], imgs_depth=None, intrinsics=None, extrinsics=None, frontier_nodes=[]):
         # self._load_scene_graph()
         # self.test_sg()
-        self._build_sg_from_hydra_graph()
-        self.update_frontier_nodes(frontier_nodes)
+        if not self.no_scene_graph:
+            self._build_sg_from_hydra_graph()
+            self.update_frontier_nodes(frontier_nodes)
+
         self.save_best_image(imgs_rgb)
 
-        if self.enrich_rooms:
+        if self.enrich_rooms and not self.no_scene_graph:
             self.add_room_labels_to_sg()
 
-        if self.enrich_objects:
+        if self.enrich_objects and not self.no_scene_graph:
             results, masks_batch, rgb_images_list, depth_list, extrinsics_list = self.detect_task_relevant_objects(imgs_rgb, imgs_depth, extrinsics)
             self.update_objects_in_sg(results, masks_batch, depth_list, extrinsics_list, intrinsics)
+
+        if not self.include_regions:
+            self.remove_region_nodes()
 
     def get_position_from_id(self, nodeid):
         return np.array(self.filtered_netx_graph.nodes[nodeid]['position'])
@@ -651,3 +663,41 @@ class SceneGraphSim:
                 result.append(current)
 
         return result
+
+    
+    def remove_region_nodes(self):
+        # Identify and process each 'room' node
+        for room_id in self.room_node_ids:
+            # Find all 'region' nodes connected to this 'room'
+            place_ids = [place_id for place_id in self.filtered_netx_graph.successors(room_id) if 'room' not in place_id]
+            object_ids = [object_id for place_id in place_ids for object_id in self.filtered_netx_graph.successors(place_id) if 'agent' not in object_id] # ignore place->agent
+            agent_ids = [agent_id for place_id in place_ids for agent_id in self.filtered_netx_graph.successors(place_id) if 'agent' in agent_id] # only place->agent
+            
+            # For each 'region' node, connect the 'room' directly to the 'object' children
+            for object_id in object_ids:
+                # Add edges from room to region
+                edge_type = 'room-to-object'
+                self.filtered_netx_graph.add_edges_from([(
+                    room_id, object_id,
+                    {'source_name': 'room',
+                    'target_name': 'object',
+                    'type': edge_type}
+                )])
+                    
+
+            for agent_id in agent_ids:
+                # Add edges from room to region
+                edge_type = 'room-to-agent'
+                self.filtered_netx_graph.add_edges_from([(
+                    room_id, agent_id,
+                    {'source_name': 'room',
+                    'target_name': 'agent',
+                    'type': edge_type}
+                )])
+            self.filtered_netx_graph.remove_nodes_from(place_ids)
+        
+        # data = json_graph.node_link_data(self.filtered_netx_graph)
+        # # Write the data to a JSON file
+        # with open("graph.json", "w") as f:
+        #     json.dump(data, f, indent=4)
+        # import ipdb; ipdb.set_trace()

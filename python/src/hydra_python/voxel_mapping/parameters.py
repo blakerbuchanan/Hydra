@@ -13,7 +13,7 @@
 # LICENSE file in the root directory of this source tree.
 from typing import Any, Tuple
 
-from voxel_mapping.utils.config import get_config
+from hydra_python.voxel_mapping.utils.config import get_config
 
 
 class Parameters(object):

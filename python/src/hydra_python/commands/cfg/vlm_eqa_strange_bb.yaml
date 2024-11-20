@@ -30,6 +30,7 @@ scene_graph_sim:
   save_image: ${vlm.use_image}
   enrich_rooms: True
   enrich_objects: False
+  include_regions: False
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True

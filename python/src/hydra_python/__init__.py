@@ -45,8 +45,10 @@ from hydra_python.dataset_logger import *
 from hydra_python.vlm_planner import *
 from hydra_python.vlm_planner_eqa_gpt import VLMPLannerEQAGPT
 from hydra_python.vlm_planner_eqa_gemini import VLMPLannerEQAGemini
-from vlm_planner_eqa_gemini_sayplan import VLMPLannerEQAGeminiSayPlan
-from hydra_python.scene_graph_sim import *
+from hydra_python.vlm_planner_eqa_gemini_sayplan import VLMPLannerEQAGeminiSayPlan
+from hydra_python.vlm_planner_eqa_gpt_sayplan import VLMPLannerEQAGPTSAYPLAN
+from hydra_python.vlm_planner_eqa_gpt_no_SG import VLMPLannerEQAGPTNoSG
+from hydra_python.scene_graph_sim import * 
 from hydra_python.rr_logger import *
 # from hydra_python import voxel_mapping
 # from hydra_python.frontier_mapping_eqa.tsdf import *

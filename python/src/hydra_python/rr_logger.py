@@ -1,7 +1,7 @@
 import rerun as rr
 import rerun.blueprint as rrb
 import numpy as np
-from voxel_mapping.utils.voxel import occupancy_map_to_3d_points
+from hydra_python.voxel_mapping.utils.voxel import occupancy_map_to_3d_points
 
 class RRLogger:
     def __init__(self, output_path):
