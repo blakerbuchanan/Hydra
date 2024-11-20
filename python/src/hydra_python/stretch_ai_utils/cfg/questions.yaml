@@ -40,12 +40,12 @@ Question4:
   enrich_labels: "blue water bottle."
 
 Question5:
-  question: "Is there a backpack on the yellow couch?"
+  question: "Is my sweater on the blue couch?"
   choices:
     A: "Yes"
     B: "No"
   answer: A
-  enrich_labels: "backpack. yellow couch."
+  enrich_labels: "sweater. blue couch."
 
 Question6:
   question: "Where is my backpack?"

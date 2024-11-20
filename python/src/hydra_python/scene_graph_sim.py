@@ -50,6 +50,7 @@ class SceneGraphSim:
         self._detector_path = output_path / "detector"
         self._sg_path = output_path / "filtered_dsg.json"
         self.pipeline = pipeline
+        self._room_names = []
 
         os.makedirs(self._detector_path, exist_ok=True)
         
@@ -57,7 +58,7 @@ class SceneGraphSim:
         self.thresh = 2.0
         self.choose_final_image = self.sg_cfg.key_frame_selection.choose_final_image
 
-        self.filter_out_objects = ['floor', 'ceiling']
+        self.filter_out_objects = ['floor', 'ceiling', '.']
 
         if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel

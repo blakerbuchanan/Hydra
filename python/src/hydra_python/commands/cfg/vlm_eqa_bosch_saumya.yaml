@@ -1,7 +1,7 @@
 # General
 seed: 42
 # exp_name: explore_eqa_${vlm.name}_images_${vlm.use_image}
-exp_name: test_gemini_with_new_planner
+exp_name: test_get_pickle_data
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
 gpu: 0 
@@ -13,7 +13,8 @@ data:
   semantic_annot_data_path: '/home/saumyas/semnav_workspace/data/hm3d-train-semantic-annots-v0.2'
   scene_data_path: '/home/saumyas/semnav_workspace/data/hm3d/train'
   eqa_dataset_enrich_labels: '/home/saumyas/semnav_workspace/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
-  use_semantic_data: True
+  test_data_path: "/home/saumyas/semnav_workspace/src/hydra/outputs/test_data/data_with_semantics_2024-11-01_20-34-50.pkl"
+  use_semantic_data: False
 
 logging:
   output_parent_dir: results
@@ -27,19 +28,21 @@ detection:
 
 scene_graph_sim:
   save_image: ${vlm.use_image}
-  enrich_rooms: True
+  enrich_rooms: False
   enrich_objects: False
   key_frame_selection:
     use_clip_for_images: False
     use_siglip_for_images: True
     topk: 2
     visualize_best_image: False
+    choose_final_image: True
   detection:
     detection_model: GroundedSAM2
     visualize_detections: True
     return_mask: False
     min_detection_confidence: 0.75
-  img_subsample_freq: 2
+  img_subsample_freq: 1
+  use_semantic_data: ${data.use_semantic_data}
 
 vlm:
   name: 'gemini' # 'gemini'
@@ -47,6 +50,7 @@ vlm:
   use_done_action: False
   early_exit: True
   add_history: True
+  temp: 0.5
 
 planner:
   max_step_room_size_ratio: 3
@@ -100,5 +104,5 @@ detic:
   config_file: '/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/detection/configs/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.yaml'
   custom_vocabulary_path: '/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/hm3d_label_space.yaml'
   weights: '/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/detection/models/Detic_LCOCOI21k_CLIP_SwinB_896b32_4x_ft4x_max-size.pth'
-  confidence_threshold: 0.4
+  confidence_threshold: 0.3
   MODEL.ROI_BOX_HEAD.CAT_FREQ_PATH: '/home/saumyas/semnav_workspace/src/stretch_ai/src/stretch/perception/detection/detic/Detic/datasets/metadata/lvis_v1_train_cat_info.json'

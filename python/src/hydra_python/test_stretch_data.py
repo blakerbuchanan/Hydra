@@ -5,7 +5,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 from tqdm import trange
 from typing import NamedTuple
-
+from PIL import Image
 import rerun as rr
 
 import hydra_python as hydra
@@ -19,6 +19,9 @@ from stretch.perception import create_semantic_sensor
 
 import torch
 from dataclasses import dataclass
+import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
 @dataclass
 class Obs:
@@ -40,6 +43,37 @@ def main(cfg):
         data = pickle.load(file)
 
     camera_K = data['camera_K'][0]
+    for img_idx in range(len(data['semantic'])):
+        # img = Image.fromarray(data['semantic'][img_idx])
+                # Define or use a colormap for the segmentation
+        cmap = plt.get_cmap('Paired')  # Or choose any other colormap (e.g., 'tab20', 'viridis')
+        seg_array = data['semantic'][img_idx]
+
+        # Normalize array for colormap
+        norm = mcolors.Normalize(vmin=seg_array.min(), vmax=seg_array.max())
+        segmentation_rgb = cmap(norm(seg_array))
+
+        # Convert to 8-bit RGB format and save as an image
+        segmentation_rgb = (segmentation_rgb[:, :, :3] * 255).astype(np.uint8)  # Discard alpha, scale to 0-255
+        seg_img = Image.fromarray(segmentation_rgb)
+        seg_img.save(output_path / f"semantic_img_{img_idx}.png")
+
+    import ipdb; ipdb.set_trace()
+
+    for img_idx in range(len(data['rgb'])):
+        img = Image.fromarray(data['rgb'][img_idx])
+        img.save(output_path / f"rgb_img_{img_idx}.png")
+
+    # final_img = Image.fromarray(np.concatenate([*sampled_images[top_k_indices], imgs_rgb[-1]], axis=1))
+    for img_idx in range(len(data['depth'])):
+        depth_min, depth_max = data['depth'][img_idx].min(), data['depth'][img_idx].max()
+        depth_normalized = 255 * (data['depth'][img_idx] - depth_min) / (depth_max - depth_min)
+        depth_normalized = depth_normalized.astype(np.uint8)
+        final_img = Image.fromarray(depth_normalized, mode='L')
+        final_img.save(output_path / f"depth_img_{img_idx}.png")
+
+    import ipdb; ipdb.set_trace()
+    
     # width = data['rgb'][0].shape[1]
     # height = data['rgb'][0].shape[0]
     # camera_info = {

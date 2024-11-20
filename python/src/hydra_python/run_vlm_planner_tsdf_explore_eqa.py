@@ -19,6 +19,8 @@ from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_ins
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import torch
 
+from hydra_python.detection.detic_segmenter import DeticSegmenter
+
 def load_experiment_data(filename='experiment_results.json'):
     if not os.path.exists(filename):
         data={}
@@ -53,6 +55,11 @@ def main(cfg):
     device = f"cuda:{cfg.gpu}" if torch.cuda.is_available() else "cpu"
 
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
+
+    if not cfg.data.use_semantic_data:
+        segmenter = DeticSegmenter(cfg)
+    else:
+        segmenter = None
 
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
@@ -104,6 +111,11 @@ def main(cfg):
             rr_logger=rr_logger,
         )
 
+        if f'{question_ind}_{question_data["scene"]}' in eqa_enrich_labels:
+            label = eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels']
+        else:
+            label = ' '
+
         sg_sim = hydra.SceneGraphSim(
             cfg, 
             question_path, 
@@ -111,7 +123,8 @@ def main(cfg):
             rr_logger, 
             device=device, 
             clean_ques_ans=clean_ques_ans,
-            enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
+            # enrich_object_labels=eqa_enrich_labels[f'{question_ind}_{question_data["scene"]}']['labels'])
+            enrich_object_labels=label)
 
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
@@ -125,6 +138,7 @@ def main(cfg):
             tsdf_planner=tsdf_planner,
             sg_sim=sg_sim,
             save_image=cfg.vlm.use_image,
+            segmenter=segmenter,
         )
 
         if 'gpt' in cfg.vlm.name.lower():
@@ -204,6 +218,7 @@ def main(cfg):
                         tsdf_planner=tsdf_planner,
                         sg_sim=sg_sim,
                         save_image=cfg.vlm.use_image,
+                        segmenter=segmenter,
                     )
                     traj_length += get_traj_len_from_poses(poses)
 

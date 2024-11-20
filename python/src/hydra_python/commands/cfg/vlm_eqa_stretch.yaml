@@ -1,8 +1,8 @@
 # General
 seed: 42
-question: 0
+question: 5
 # exp_name: test_stretch_hydra
-exp_name: stretch_${vlm.name}_question_${question}_nov11_trash_door2
+exp_name: stretch_${vlm.name}_question_${question}_nov14_sweater_blue_couch
 output_path: /home/saumyas/semnav_workspace/src/hydra/outputs/${exp_name}
 results_filename: ${exp_name}_results
 gpu: 0 
