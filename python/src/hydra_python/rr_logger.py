@@ -133,13 +133,15 @@ class RRLogger:
         )
         rr.log(f"world/agent_tf", agent_from_world)
         
-    def log_camera_tf(self, pos, quat):
+    def log_camera_tf(self, pos, quat, cam_entity=None):
         translation = np.asarray([pos[0], pos[1], pos[2]])
         quat_mod = np.asarray([quat[1], quat[2], quat[3], quat[0]])
         camera_from_world = rr.Transform3D(
             translation=translation, rotation=rr.Quaternion(xyzw=quat_mod), from_parent=False
         )
-        rr.log(f"{self.primary_camera_entity}", camera_from_world)
+        if cam_entity is None:
+            cam_entity = self.primary_camera_entity
+        rr.log(f"{cam_entity}", camera_from_world)
 
     def log_target_poses(self, target_poses):
         rr.log("world/target_poses", rr.Points3D(target_poses, colors=[0,255,0], radii=0.11))

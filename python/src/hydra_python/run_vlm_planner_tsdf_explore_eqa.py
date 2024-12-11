@@ -19,7 +19,7 @@ from hydra_python.utils import load_eqa_data, initialize_hydra_pipeline, get_ins
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import torch
 
-from hydra_python.detection.detic_segmenter import DeticSegmenter
+
 
 def load_experiment_data(filename='experiment_results.json'):
     if not os.path.exists(filename):
@@ -57,6 +57,7 @@ def main(cfg):
     eqa_enrich_labels = OmegaConf.load(cfg.data.eqa_dataset_enrich_labels)
 
     if not cfg.data.use_semantic_data:
+        from hydra_python.detection.detic_segmenter import DeticSegmenter
         segmenter = DeticSegmenter(cfg)
     else:
         segmenter = None
@@ -64,9 +65,10 @@ def main(cfg):
     successes = 0
     # TODO(blake): Fix IndexError: index 488 is out of bounds for axis 0 with size 457
     for question_ind in tqdm(range(len(questions_data))):
-        if question_ind in [0, 3, 11, 64, 77, 78, 81, 89, 98]:
+        # if question_ind in [0, 3, 11, 64, 77, 78, 81, 89, 98]:
+        #     continue
+        if question_ind not in [78, 81, 89, 98]:
             continue
-
         question_data = questions_data[question_ind]
         scene_floor = question_data["scene"] + "_" + question_data["floor"]
         answer = question_data["answer"]

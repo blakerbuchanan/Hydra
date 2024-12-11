@@ -2,7 +2,8 @@
 seed: 42
 # exp_name: test_palnner
 # exp_name: test_view
-exp_name: explore_eqa_${vlm.name}_no_regions_enrich_no_enrich_frontiers
+# exp_name: explore_eqa_${vlm.name}_no_regions_enrich_no_enrich_frontiers
+exp_name: explore_eqa_${vlm.name}_heirar_view
 # exp_name: explore_eqa_${vlm.name}_no_image
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
@@ -30,9 +31,9 @@ detection:
 scene_graph_sim:
   save_image: ${vlm.use_image}
   frontier_obj_thresh: 2.0
-  enrich_rooms: True
-  enrich_frontiers: False
-  enrich_objects: False
+  enrich_rooms: True #check
+  enrich_frontiers: True #check
+  enrich_objects: False #check
   include_regions: False
   no_scene_graph: False # FOR BASELINE GraphEQA-Vis only use with run_vlm_planner_frontier_exploration_no_SG.py
   key_frame_selection:
