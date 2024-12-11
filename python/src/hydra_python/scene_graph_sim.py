@@ -62,7 +62,7 @@ class SceneGraphSim:
         self.thresh = 2.0
         self.choose_final_image = self.sg_cfg.key_frame_selection.choose_final_image
 
-        self.filter_out_objects = ['floor', 'ceiling', '.']
+        self.filter_out_objects = ['world', 'floor', 'ceiling', '.', 'robot0_link0', 'robot0_link1', 'robot0_link2', 'robot0_link3', 'robot0_link4', 'robot0_link5', 'robot0_link6', 'robot0_link7']
 
         if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel
@@ -188,6 +188,8 @@ class SceneGraphSim:
             
             # Filtering
             if 'o' in node.id.category.lower():
+                if node_name in self.filter_out_objects:
+                    continue
                 object_node_positions.append(node.attributes.position)
                 bbox = node.attributes.bounding_box
                 bb_half_sizes.append(0.5 * bbox.dimensions)
@@ -196,8 +198,7 @@ class SceneGraphSim:
                 bb_labels.append(node.attributes.name)
                 bb_colors.append(node.attributes.color)
                 
-                if node_name in self.filter_out_objects:
-                    continue
+                
                 self.filtered_obj_positions.append(node.attributes.position)
                 self.filtered_obj_ids.append(nodeid)
                 self._object_node_ids.append(nodeid)

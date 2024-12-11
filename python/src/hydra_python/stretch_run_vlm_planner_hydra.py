@@ -55,7 +55,7 @@ def main(stretch_parameter_file, hydra_cfg):
             verbose=True,
         )
         sensor_categories_mapping = semantic_sensor.seg_id_to_name
-        # write_config_yaml(sensor_categories_mapping)
+        # write_config_yaml(sensor_categories_mapping, out_path="/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/detic_label_space.yaml")
         # import ipdb; ipdb.set_trace()
     else:
         semantic_sensor = None

@@ -1,0 +1,45 @@
+---
+total_semantic_labels: 19
+dynamic_labels: []
+invalid_labels: []
+object_labels:
+  - '0'
+  - '1'
+  - '2'
+  - '3'
+  - '4'
+  - '5'
+  - '6'
+  - '7'
+  - '8'
+  - '9'
+  - '10'
+  - '11'
+  - '12'
+  - '13'
+  - '14'
+  - '15'
+  - '16'
+  - '17'
+  - '18'
+surface_places_labels: []
+label_names:
+  - {label: 0, name: world}
+  - {label: 1, name: tablelink}
+  - {label: 2, name: robot0_mocap}
+  - {label: 3, name: robot0_base}
+  - {label: 4, name: robot0_link0}
+  - {label: 5, name: robot0_link1}
+  - {label: 6, name: robot0_link2}
+  - {label: 7, name: robot0_link3}
+  - {label: 8, name: robot0_link4}
+  - {label: 9, name: robot0_link5}
+  - {label: 10, name: robot0_link6}
+  - {label: 11, name: robot0_link7}
+  - {label: 12, name: robot0_right_hand}
+  - {label: 13, name: block_bottom_main}
+  - {label: 14, name: block_top_main}
+  - {label: 15, name: blockA_main}
+  - {label: 16, name: blockB_main}
+  - {label: 17, name: blue_mug_main}
+  - {label: 18, name: supplement0_main}

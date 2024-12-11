@@ -296,6 +296,37 @@ def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_m
     
     return pipeline
 
+def initialize_hydra_pipeline_mujoco(cfg, camera_info, names, output_path):
+    hydra.set_glog_level(cfg.glog_level, cfg.verbosity)
+    configs = hydra.load_configs("habitat", labelspace_name=cfg.label_space)
+    if not configs:
+        click.secho(
+            f"Invalid config: dataset 'habitat' and label space '{cfg.label_space}'",
+            fg="red",
+        )
+        return
+    pipeline_config = hydra.PipelineConfig(configs)
+    pipeline_config.enable_reconstruction = True
+
+    colormap = hydra.SegmentationColormap.from_names(names=names)
+    pipeline_config.label_names = {i: x for i, x in enumerate(colormap.names)}
+    colormap.fill_label_space(pipeline_config.label_space) # TODO: check
+    
+    # pipeline_config.label_space.colormap = {0: (np.array([255,255,255])).astype(np.uint8).tolist()}
+    if output_path:
+        pipeline_config.logs.log_dir = str(output_path)
+    pipeline = hydra.HydraPipeline(
+        pipeline_config, robot_id=0, config_verbosity=cfg.config_verbosity, freeze_global_info=False)
+    pipeline.init(configs, hydra.create_camera(camera_info))
+
+    if output_path:
+        glog_dir = output_path / "logs"
+        if not glog_dir.exists():
+            glog_dir.mkdir()
+        hydra.set_glog_dir(str(glog_dir))
+    
+    return pipeline
+
 def get_traj_len_from_poses(poses):
     pts = np.array([pt[1] for pt in poses])
     deltas = np.diff(pts, axis=0)

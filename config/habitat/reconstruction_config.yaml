@@ -1,10 +1,10 @@
 ---
 map:
-  voxels_per_side: 16
-  voxel_size: 0.1
+  voxels_per_side: 32 #16 # does not have much impact on speed but improves mesh resolution
+  voxel_size: 0.01 # 0.1 # has a huge impact on speed as well as mesh resolution
   truncation_distance: 0.3
-num_poses_per_update: 5
-dense_representation_radius_m: 8.0
+num_poses_per_update: 1 # 5
+dense_representation_radius_m: 3.0 # 8.0
 mesh:
   min_weight: 0.0001
   integrator_threads: -1

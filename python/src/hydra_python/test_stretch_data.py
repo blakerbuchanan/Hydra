@@ -94,7 +94,7 @@ def main(cfg):
         verbose=True,
     )
     sensor_categories_mapping = semantic_sensor.seg_id_to_name
-    # write_config_yaml(sensor_categories_mapping)
+    # write_config_yaml(sensor_categories_mapping, out_path="/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/detic_label_space.yaml")
     # import ipdb; ipdb.set_trace()
     pipeline = initialize_hydra_pipeline_stretch(cfg.hydra, obs, output_path, sensor_categories_mapping)
 

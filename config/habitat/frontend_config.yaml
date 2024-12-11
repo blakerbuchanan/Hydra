@@ -2,13 +2,13 @@
 pgmo:
   time_horizon: 15.0
   d_graph_resolution: 2.5
-  mesh_resolution: 0.005
+  mesh_resolution: 0.005 #0.005
 objects:
   prefix: O
   active_index_horizon_m: 7.0
-  min_cluster_size: 40
+  min_cluster_size: 5 # 40
   max_cluster_size: 100000
-  cluster_tolerance: 0.25
+  cluster_tolerance: 0.25 #0.25
 min_object_vertices: 40
 freespace_places:
   type: gvd
@@ -49,7 +49,7 @@ freespace_places:
   tsdf_interpolator:
     type: downsample
     ratio: 2
-use_frontiers: true
+use_frontiers: false # true
 frontier_places:
   type: "voxel_clustering"
   cluster_tolerance: 0.3
