@@ -3,7 +3,7 @@ seed: 42
 # exp_name: test_palnner
 # exp_name: test_view
 # exp_name: explore_eqa_${vlm.name}_no_regions_enrich_no_enrich_frontiers
-exp_name: explore_eqa_${vlm.name}_heirar_view
+exp_name: openEQA_${vlm.name}_grapheqa
 # exp_name: explore_eqa_${vlm.name}_no_image
 output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
 results_filename: ${vlm.name}_images_${vlm.use_image}
@@ -11,13 +11,11 @@ gpu: 0
 sim_gpu: 0
 
 data:
-  question_data_path: '/home/saumyas/catkin_ws_semnav/data/explore-eqa_semnav/data/questions.csv'
-  init_pose_data_path: '/home/saumyas/catkin_ws_semnav/data/explore-eqa_semnav/data/scene_init_poses.csv'
-  semantic_annot_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d-train-semantic-annots-v0.2'
-  scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d/train'
-  eqa_dataset_enrich_labels: '/home/saumyas/Projects/semnav/explore-eqa_semnav/data/eqa_dataset_enrich_labels.yaml'
+  semantic_annot_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d_val/scene_datasets/hm3d/val/hm3d_annotated_val_basis.scene_dataset_config.json'
+  scene_data_path: '/home/saumyas/catkin_ws_semnav/data/hm3d_val/scene_datasets/hm3d/val'
   openeqa_question_data_path: '/home/saumyas/catkin_ws_semnav/data/openEQA/open-eqa-v0.json'
-  openeqa_init_pose_data_path: '/home/saumyas/catkin_ws_semnav/data/openEQA/openeqa_init_poses.json'
+  openeqa_init_pose_data_path: '/home/saumyas/catkin_ws_semnav/data/openEQA/data/frames/hm3d-v0/openeqa_init_poses.json'
+  evaluation_prompt_file: '/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/openEQA/evaluation_prompt.txt'
   use_semantic_data: True
 
 logging:
@@ -64,7 +62,7 @@ planner:
 
 habitat:
   scene_type: 'hm3d'
-  dataset_type: 'train'
+  dataset_type: 'val'
   sim_gpu: ${sim_gpu}
   inflation_radius: 0.25
   img_width: 640

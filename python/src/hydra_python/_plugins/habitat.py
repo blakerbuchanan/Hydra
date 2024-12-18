@@ -90,16 +90,16 @@ def _make_sensor(sensor_type, width=640, height=360, hfov=90.0, camera_height=0.
     return spec
 
 
-def _make_habitat_config(scene, scene_type='mp3d', camera_height=0.0, width=640, height=360, agent_z_offset=0.0, agent_radius=0.1, hfov=90.0, sim_gpu=0):
+def _make_habitat_config(scene, dataset_type='train', scene_type='mp3d', camera_height=0.0, width=640, height=360, agent_z_offset=0.0, agent_radius=0.1, hfov=90.0, sim_gpu=0):
     sim_cfg = habitat_sim.SimulatorConfiguration()
     path = scene.parent.parent
     if scene_type=='mp3d':
         json_path = path / "mp3d.scene_dataset_config.json"
     elif scene_type=='hm3d':
-        json_path = path / "hm3d_annotated_train_basis.scene_dataset_config.json"
+        json_path = path / f"hm3d_annotated_{dataset_type}_basis.scene_dataset_config.json"
     else:
         raise NotImplementedError('scene type not implemented.')
-
+    
     sim_cfg.scene_dataset_config_file = str(json_path)
     sim_cfg.gpu_device_id = sim_gpu
     sim_cfg.scene_id = str(scene)
@@ -261,6 +261,7 @@ class HabitatInterface:
         config, camera_info = _make_habitat_config(
             scene, 
             scene_type=cfg.scene_type, 
+            dataset_type=cfg.dataset_type,
             camera_height=cfg.camera_height,
             width=cfg.img_width, 
             height=cfg.img_height,

@@ -2,6 +2,7 @@ import hydra_python as hydra
 import csv, os, ast
 import click
 import numpy as np
+import json
 
 def get_latest_image(output_folder):
     png_files = [file for file in os.listdir(output_folder) if file.startswith('current_img_')]
@@ -155,6 +156,35 @@ def load_eqa_data(cfg):
     # init_pts = np.array(init_pts)
     return filtered_question_data, init_pose_data
 
+def load_openeqa_data(cfg):
+    # Load dataset
+    with open(cfg.openeqa_question_data_path, "r") as file:
+        questions_data = json.load(file)
+    
+    with open(cfg.semantic_annot_data_path, "r") as file:
+        semantic_annots = json.load(file)
+    semantic_annots = semantic_annots['stages']['paths']['.glb']
+    
+    with open(cfg.openeqa_init_pose_data_path, "r") as file:
+        init_poses = json.load(file)
+    
+    semantic_scenes = [s.split('/*.basis')[0] for s in semantic_annots]
+
+    filtered_question_data = []
+    for data in questions_data:
+        if 'hm3d-v0' in data['episode_history']:
+            scene_id = (init_poses[data['episode_history']]['scene_id'].split("val/")[1]).split('/')[0]
+            data['scene'] = scene_id
+            if cfg.use_semantic_data:
+                if scene_id in semantic_scenes:
+                    filtered_question_data.append(data)
+            else:
+                if scene_id not in semantic_scenes:
+                    filtered_question_data.append(data)
+
+    print(f"Loaded {len(filtered_question_data)} questions.")
+    return filtered_question_data, init_poses
+
 def get_instruction_from_eqa_data(question_data):
     question = question_data["question"]
     # self.choices = [c.split("'")[1] for c in question_data["choices"].split("',")]
@@ -301,6 +331,11 @@ def get_traj_len_from_poses(poses):
     deltas = np.diff(pts, axis=0)
     segment_lengths = np.linalg.norm(deltas, axis=1)
     return np.sum(segment_lengths)
-    
+
+def load_evaluation_prompt(path):
+    path = Path(path)
+    with path.open("r") as f:
+        return f.read().strip()
+        
 if __name__ == "__main__":
     get_latest_image(Path("/home/saumyas/catkin_ws_semnav/src/hydra/outputs/test_obj_enrich/0_00006-HkseAnWCgqk_0"))

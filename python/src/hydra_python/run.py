@@ -5,7 +5,7 @@ import click
 import rerun as rr
 import rerun.blueprint as rrb
 from hydra_python.frontier_mapping_eqa.utils import get_cam_pose_tsdf, pos_habitat_to_normal
-from voxel_mapping import Observations
+from hydra_python.voxel_mapping import Observations
 import threading, time
 from PIL import Image
 from scipy.special import softmax

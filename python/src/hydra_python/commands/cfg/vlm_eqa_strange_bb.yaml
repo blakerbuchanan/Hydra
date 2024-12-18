@@ -58,6 +58,7 @@ planner:
 
 habitat:
   scene_type: 'hm3d'
+  dataset_type: 'train'
   sim_gpu: ${sim_gpu}
   inflation_radius: 0.25
   img_width: 640

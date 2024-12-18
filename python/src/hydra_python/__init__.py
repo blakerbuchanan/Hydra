@@ -44,6 +44,7 @@ from hydra_python._hydra_bindings import *
 from hydra_python.dataset_logger import *
 from hydra_python.vlm_planner import *
 from hydra_python.vlm_planner_eqa_gpt import VLMPLannerEQAGPT
+from hydra_python.openEQA.vlm_planner_openeqa_gpt import VLMPLannerOpenEQAGPT
 from hydra_python.vlm_planner_eqa_gemini import VLMPLannerEQAGemini
 from hydra_python.vlm_planner_eqa_gemini_sayplan import VLMPLannerEQAGeminiSayPlan
 from hydra_python.vlm_planner_eqa_gpt_sayplan import VLMPLannerEQAGPTSAYPLAN
