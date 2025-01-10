@@ -219,4 +219,5 @@ compile_commands.json
 data/
 results/
 outputs/
+outputs
 *.pth
