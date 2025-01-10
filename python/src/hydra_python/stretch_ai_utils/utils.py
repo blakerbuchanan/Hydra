@@ -21,8 +21,9 @@ def _format_list(name, values, collapse=True, **kwargs):
     value_str = yaml.dump(values, default_flow_style=collapse, **args)
     return f"{prefix}: {value_str}"
     
-def write_config_yaml(category_mapping, out_path="/home/saumyas/semnav_workspace/src/hydra/config/label_spaces/detic_label_space.yaml"):
-    output_path = Path(out_path)
+def write_config_yaml(category_mapping, label_space='detic'):
+    package_path = Path(__file__).absolute().parent.parent.parent.parent.parent
+    output_path = package_path / f'config/label_spaces/{label_space}_label_space.yaml'
     invalid_labels = []
     surface_labels = []
     dynamic_labels = []

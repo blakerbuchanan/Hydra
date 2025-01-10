@@ -1,0 +1,60 @@
+# General
+seed: 42
+question: 10
+# exp_name: test_stretch_hydra
+exp_name: stretch_${vlm.name}_question_${question}_dec18_semantic_test
+output_path: /home/saumyas/catkin_ws_semnav/src/hydra/outputs/${exp_name}
+results_filename: ${exp_name}_results
+gpu: 0 
+sim_gpu: 0
+
+data:
+  # test_data_path: "/home/saumyas/semnav_workspace/src/stretch_ai/stretch_output_2024-10-29_21-20-00.pkl"
+  test_data_path: "/home/saumyas/semnav_workspace/src/hydra/outputs/test_data/data_with_semantics_2024-11-01_20-34-50.pkl"
+  question_data_path: "/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/stretch_ai_utils/cfg/questions_home.yaml"
+
+logging:
+  output_parent_dir: results
+  save_obs: true
+  save_freq: 10
+
+detection:
+  GroundedSAM2:
+    sam2_checkpoint: "/home/saumyas/Projects/semnav/Grounded-SAM-2/checkpoints/sam2.1_hiera_large.pt"
+    model_cfg: "configs/sam2.1/sam2.1_hiera_l.yaml"
+
+scene_graph_sim:
+  save_image: ${vlm.use_image}
+  frontier_obj_thresh: 2.0
+  enrich_rooms: True
+  enrich_objects: False
+  key_frame_selection:
+    use_clip_for_images: False
+    use_siglip_for_images: True
+    topk: 2
+    visualize_best_image: False
+    choose_final_image: True
+  detection:
+    detection_model: GroundedSAM2
+    visualize_detections: False
+    return_mask: False
+    min_detection_confidence: 0.75
+  img_subsample_freq: 1
+  
+vlm:
+  name: "gpt-4o-2024-08-06" # 'gemini', 'gpt-4o-mini', 
+  use_image: True
+  use_done_action: False
+  add_history: True
+  early_exit: True
+
+planner:
+  max_step_room_size_ratio: 3
+  break_at_done: False
+  max_planning_steps: 30
+  
+hydra:
+  glog_level: 0
+  verbosity: 0
+  label_space: 'myhome'
+  config_verbosity: 0

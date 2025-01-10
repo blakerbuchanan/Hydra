@@ -62,7 +62,7 @@ class SceneGraphSim:
         self.thresh = 2.0
         self.choose_final_image = self.sg_cfg.key_frame_selection.choose_final_image
 
-        self.filter_out_objects = ['floor', 'ceiling', '.']
+        self.filter_out_objects = ['ceiling', '.'] #['floor', 'ceiling', '.']
 
         if self.sg_cfg.key_frame_selection.use_clip_for_images:
             from transformers import CLIPProcessor, CLIPModel
@@ -276,10 +276,11 @@ class SceneGraphSim:
                 self._frontier_node_ids.append(nodeid)
                 self.filtered_netx_graph.add_nodes_from([(nodeid, attr)])
 
-                dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
-                relevant_objs = dist < self.thresh
-                relevent_node_ids = self.filtered_obj_ids[relevant_objs]
-                relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
+                if len(self.filtered_obj_positions)>0:
+                    dist = np.linalg.norm((np.array(frontier_nodes[i]) - self.filtered_obj_positions), axis=1)
+                    relevant_objs = dist < self.thresh
+                    relevent_node_ids = self.filtered_obj_ids[relevant_objs]
+                    relevant_obj_pos = self.filtered_obj_positions[relevant_objs]
 
                 if self.enrich_frontiers:
                     edge_type = 'frontier-to-object'

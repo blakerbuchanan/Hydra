@@ -92,9 +92,13 @@ def main(stretch_parameter_file, hydra_cfg):
     )
     agent.start()
     agent.update()
-
+    
     if parameters["agent"]["in_place_rotation_steps"] > 0:
-        agent.rotate_in_place(
+        # agent.rotate_in_place(
+        #     steps=parameters["agent"]["in_place_rotation_steps"],
+        #     visualize=False,
+        # )
+        agent.initialize_at_init_pose(
             steps=parameters["agent"]["in_place_rotation_steps"],
             visualize=False,
         )
@@ -138,7 +142,7 @@ if __name__ == "__main__":
 
     stretch_config_path = str(Path(__file__).resolve().parent) + f'/stretch_ai_utils/cfg/{args.cfg_file}.yaml'
 
-    hydra_cfg_path = Path('/home/saumyas/semnav_workspace/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa_stretch.yaml')
+    hydra_cfg_path = Path('/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa_stretch_ego.yaml')
     hydra_cfg = OmegaConf.load(hydra_cfg_path)
     OmegaConf.resolve(hydra_cfg)
 

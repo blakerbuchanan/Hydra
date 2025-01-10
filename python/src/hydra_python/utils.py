@@ -2,7 +2,7 @@ import hydra_python as hydra
 import csv, os, ast
 import click
 import numpy as np
-import json
+from hydra_python.stretch_ai_utils.utils import write_config_yaml
 
 def get_latest_image(output_folder):
     png_files = [file for file in os.listdir(output_folder) if file.startswith('current_img_')]
@@ -275,7 +275,7 @@ def initialize_hydra_pipeline_rosbag(cfg, camera_info, output_path):
     return pipeline
 
 def initialize_hydra_pipeline_stretch(cfg, obs, output_path, sensor_categories_mapping=None):
-
+    write_config_yaml(sensor_categories_mapping, label_space=cfg.label_space)
     # Get camera info
     camera_K = obs.camera_K
     width = obs.rgb.shape[1]

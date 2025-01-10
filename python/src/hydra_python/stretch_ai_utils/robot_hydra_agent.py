@@ -532,10 +532,62 @@ class RobotHydraAgent:
             self.traj_imgs_depth.append(obs.depth)
             self.traj_camera_Ks.append(obs.camera_K)
             self.traj_camera_poses.append(obs.camera_pose)
-
-            
         return True
 
+    def initialize_at_init_pose(
+        self,
+        steps: Optional[int] = -1,
+        visualize: bool = False,
+        verbose: bool = False,
+        full_sweep: bool = True,
+    ) -> bool:
+        """Simple helper function to make the robot rotate in place. Do a 360 degree turn to get some observations (this helps debug the robot and create a nice map).
+
+        Args:
+            steps(int): number of steps to rotate (each step is 360 degrees / steps). If steps <= 0, use the default number of steps from the parameters.
+            visualize(bool): show the map as we rotate. Default is False.
+
+        Returns:
+            executed(bool): false if we did not actually do any rotations"""
+        logger.info("Initialize in place")
+        if steps is None or steps <= 0:
+            # Read the number of steps from the parameters
+            if self._realtime_updates:
+                steps = self.parameters["agent"]["realtime_rotation_steps"]
+                logger.info(f"Using real-time rotation steps: {steps}")
+            else:
+                steps = self.parameters["agent"]["in_place_rotation_steps"]
+
+        # step_size = 2 * np.pi / steps
+        i = 0
+        x, y, theta = self.robot.get_base_pose()
+        if verbose:
+            print(f"==== ROTATE IN PLACE at {x}, {y} ====")
+
+        obs = self.robot.get_observation()
+        self.traj_imgs_rgb, self.traj_imgs_depth, self.traj_camera_Ks, self.traj_camera_poses = [obs.rgb], [obs.depth], [obs.camera_K], [obs.camera_pose]
+
+        if full_sweep:
+            steps += 1
+        while i < steps:
+            i += 1
+            if not self._realtime_updates:
+                self.update()
+
+            if visualize:
+                self.voxel_map.show(
+                    orig=np.zeros(3),
+                    xyt=self.robot.get_base_pose(),
+                    footprint=self.robot.get_robot_model().get_footprint(),
+                    instances=self.semantic_sensor is not None,
+                )
+            obs = self.robot.get_observation()
+            self.traj_imgs_rgb.append(obs.rgb)
+            self.traj_imgs_depth.append(obs.depth)
+            self.traj_camera_Ks.append(obs.camera_K)
+            self.traj_camera_poses.append(obs.camera_pose)
+        return True
+    
     def get_command(self):
         """Get a command from config file or from user input if not specified."""
         task = self.parameters.get("task").get("command")
@@ -750,6 +802,7 @@ class RobotHydraAgent:
         
         curr_img = Image.fromarray(obs.rgb)
         curr_img.save(self.output_path / "current_img.png")
+        self.robot._rerun.current_semantic_img = obs.semantic
 
         self.update_frontiers()
         
@@ -893,7 +946,7 @@ class RobotHydraAgent:
             if self.use_scene_graph:
                 self.robot._rerun.update_scene_graph(self.scene_graph, self.semantic_sensor)
             self.robot._rerun.update_hydra_mesh(self.hydra_pipeline)
-            self.robot._rerun.update_frontier(self.clustered_frontiers, self.frontier_points, self.outside_frontier_points, self.traversible)
+            self.robot._rerun.update_frontier(self.clustered_frontiers, self.frontier_points, self.outside_frontier_points)
             
         else:
             logger.error("No rerun server available!")
@@ -1322,7 +1375,7 @@ class RobotHydraAgent:
             # Tuck the arm away
             if verbose:
                 print("Sending arm to  home...")
-            # self.robot.move_to_nav_posture()
+            self.robot.move_to_nav_posture()
             if verbose:
                 print("... done.")
 
@@ -1659,12 +1712,40 @@ class RobotHydraAgent:
     ) -> PlanResult:
         with self._map_lock:
             res = self.planner.plan(start, target.cpu().numpy())
-            traj = np.array([pt.state for pt in res.trajectory])
-            # traj[:,2] = target[2]
-            res.trajectory = traj
+            if res.success:
+                traj = np.array([pt.state for pt in res.trajectory])
+                # traj[:,2] = target[2]
+                res.trajectory = traj
+                new_traj = []
+                x, y, theta = self.robot.get_base_pose()
+                start_pt = [x, y, theta]
+                for i, pt in enumerate(traj):
+                    interp_pts = self.interpolate_traj_xyt(start_pt, pt)
+                    new_traj.extend(interp_pts)
+                    start_pt = [pt[0], pt[1], pt[2]]
+                res.trajectory = new_traj
             return res
 
-    
+    def interpolate_traj_xyt(self, start, end, num_pts=3):
+        interp_x = np.linspace(start[0], end[0], num_pts)
+        interp_y = np.linspace(start[1], end[1], num_pts)
+
+        # wrap [-pi pi]
+        theta_start = np.arctan2(np.sin(start[2]), np.cos(start[2]))
+        theta_end = np.arctan2(np.sin(end[2]), np.cos(end[2]))
+
+        if abs(theta_start - theta_end)>np.pi:
+            # Interpolate through smaller angle
+            if theta_end > theta_start:
+                theta_start += 2*np.pi
+            else:
+                theta_end += 2*np.pi
+        
+        interp_theta = np.linspace(theta_start, theta_end, num_pts)
+        # interp_theta = np.arctan2(np.sin(interp_theta), np.cos(interp_theta)) # wrap [-pi pi]
+        interp_pts = [[x, y, theta] for x, y, theta in zip(interp_x, interp_y, interp_theta)]
+        return interp_pts
+
     def execute_trajectory_with_updates(
         self,
         trajectory: List[np.ndarray],
@@ -1886,7 +1967,6 @@ class RobotHydraAgent:
         results_filename: Path = None
     ):
         answer = vlm_planner._answer
-        rotated = False
         succ = False
         planning_step = 0
         for cnt_step in range(max_planning_steps):
@@ -1934,16 +2014,16 @@ class RobotHydraAgent:
                 break
 
             if target_pose is not None:
+                self.robot._rerun.log_vlm_target(target_pose, format="xyz")
                 target_pose = self.get_closest_safe_node(target_pose, target_id)
 
                 if self.robot._rerun:
-                    self.robot._rerun.log_vlm_target(target_pose)
+                    self.robot._rerun.log_vlm_target(target_pose, format="xyt")
                 
                 res = self.plan_to_target(start=start, target=target_pose)
 
                 # if it succeeds, execute a trajectory to this position
                 if res.success:
-                    rotated = False
                     self.robot._rerun.log_planner_text(vlm_planner.full_plan)
                     click.secho(f"Plan successful! Executing trajectory {cnt_step=} {planning_step=}",fg="yellow",)
                     self.traj_imgs_rgb, self.traj_imgs_depth, self.traj_camera_Ks, self.traj_camera_poses = self.execute_trajectory_with_updates(
@@ -1964,7 +2044,6 @@ class RobotHydraAgent:
             # Append latest observations
             if not self._realtime_updates:
                 self.update()
-
 
             # Error handling
             if self.robot.last_motion_failed():
