@@ -594,8 +594,11 @@ class SceneGraphSim:
             black_pixels_mask = np.all(imgs_rgb == 0, axis=-1)
             num_black_pixels = np.sum(black_pixels_mask, axis=(1, 2))
             useful_img_idxs = num_black_pixels < 0.3*w*h
+            if len(useful_img_idxs) == 0:
+                useful_img_idxs = num_black_pixels < 0.4*w*h
             useful_imgs = imgs_rgb[useful_img_idxs]
             sampled_images = useful_imgs[::self.sg_cfg.img_subsample_freq]
+            
 
             padding = True if self.sg_cfg.key_frame_selection.use_clip_for_images else "max_length" # HuggingFace says SigLIP was trained on "max_length"
             imgs_embed = self.processor(images=sampled_images, return_tensors="pt", padding=padding).to(self.device)

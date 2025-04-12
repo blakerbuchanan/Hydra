@@ -10,7 +10,8 @@ import pathlib
 import magnum
 import random
 import os
-import yaml
+import yaml, json
+from habitat_sim.scene import SemanticScene
 
 from habitat_sim.utils.common import quat_to_coeffs, quat_from_angle_axis
 from hydra_python.frontier_mapping_eqa.utils import *
@@ -97,6 +98,9 @@ def _make_habitat_config(scene, dataset_type='train', scene_type='mp3d', camera_
         json_path = path / "mp3d.scene_dataset_config.json"
     elif scene_type=='hm3d':
         json_path = path / f"hm3d_annotated_{dataset_type}_basis.scene_dataset_config.json"
+    elif scene_type=='scannet':
+        # sim_cfg.load_semantic_mesh = True
+        json_path = path / "scannet_annotated_basis.scene_dataset_config.json"
     else:
         raise NotImplementedError('scene type not implemented.')
     
@@ -283,6 +287,8 @@ class HabitatInterface:
             self._make_instance_labelmap_mp3d()
         if cfg.scene_type=='hm3d':
             self._make_instance_labelmap_hm3d(cfg.use_semantic_data)
+        if cfg.scene_type=='scannet':
+            self._make_instance_labelmap_scannet(scene)
             # self._write_config_yaml()
 
         self._obs = None
@@ -335,6 +341,30 @@ class HabitatInterface:
         else:
             self._labelmap = None
             self._colormap = None
+
+    def _make_instance_labelmap_scannet(self, scene):
+        # Load segment info
+        scene_path = scene.parent
+        scene_name = scene.parent.name
+        # with open(scene_path / f"{scene_name}_vh_clean_2.0.010000.segs.json") as f:
+        #     seg_data = json.load(f)
+        # # Load aggregation data (mapping of segments to classes)
+        # with open(scene_path / f"{scene_name}_vh_clean.aggregation.json") as f:
+        #     aggregation_data = json.load(f)
+        # # Build a mapping from segment IDs to object categories
+        # seg_to_category = {}
+        # for obj in aggregation_data["segGroups"]:
+        #     category = obj["label"]
+        #     for seg_id in obj["segments"]:
+        #         seg_to_category[seg_id] = category
+
+        # Load semantic scene information
+        semantic_scene = SemanticScene()
+        semantic_scene.load_json(scene_path / f"{scene_name}_vh_clean.aggregation.json", str(scene))
+
+        # Attach semantics to the simulator
+        self._sim.semantic_scene = semantic_scene
+        self._make_instance_labelmap_hm3d(use_semantic_data=True)
 
     def _write_config_yaml(self):
         output_path = pathlib.Path("/home/saumyas/catkin_ws_semnav/src/hydra/config/label_spaces/hm3d_label_space.yaml")

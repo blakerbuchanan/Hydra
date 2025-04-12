@@ -8,6 +8,7 @@ from openai import OpenAI
 from hydra_python.utils import get_latest_image
 from pydantic import BaseModel
 import numpy as np
+import click 
 
 client = OpenAI()
 
@@ -126,36 +127,35 @@ class VLMPLannerOpenEQAGPT:
             Given the current state information, try to answer the question. Explain the reasoning for selecting the answer.
             The answer should be concise. Some examples of how the answers look like are:
             Question: Is the bed made? Answer: No.
-            Question: I'm hot, what can I do? Aanswer: Turn on the dark grey fan.
-            Question: Where is the black backpack? Aanswer: On the floor, next to the bed.
+            Question: I'm hot, what can I do? Answer: Turn on the dark grey fan.
+            Question: Where is the black backpack? Answer: On the floor, next to the bed.
             Finally, report whether you are confident in answering the question. 
             Explain the reasoning behind the confidence level of your answer. Rate your level of confidence. 
             Provide a value between 0 and 1; 0 for not confident at all and 1 for absolutely certain.
             Do not use just commensense knowledge to decide confidence. 
-            Choose TRUE, if you have explored enough and are certain about answering the question correctly and no further exploration will help you answer the question better. 
-            Choose 'FALSE', if you are uncertain of the answer and should explore more to ground your answer in the current envioronment. 
+            Choose TRUE, if you are certain about answering the question correctly given the scene graph and the image and no further exploration of the environment (which can provide you with a larger scene graph and more images) will help you answer the question better. 
+            Choose 'FALSE', if you are uncertain of the answer and should explore the environment more by taking actions, and base your answer in the new observations. 
             Clarification: This is not your confidence in choosing the next action, but your confidence in answering the question correctly.
-            If you are unable to answer the question with high confidence, and need more information to answer the question, then you can take two kinds of steps in the environment: Goto_object_node_step or Goto_frontier_node_step 
-            You also have to choose the next action, one which will enable you to answer the question better. 
-            Goto_object_node_step: Navigates near a certain object in the scene graph. Choose this action to get a good view of the region aroung this object, if you think going near this object will help you answer the question better.
+            If you are unable to answer the question with high confidence, and need more information to answer the question, then you can take two kinds of actions in the environment: 
+            Goto_object_node_step or Goto_frontier_node_step. Choose the action that will enable you to answer the question better. 
+            Goto_object_node_step Navigates the camera to near a certain object in the scene graph. Choose this action to get a good view of the region aroung this object, if you think going near this object will help you answer the question better.
             Important to note, the scene contains incomplete information about the environment (objects maybe missing, relationships might be unclear), so it is useful to go near relevant objects to get a better view to answer the question. 
-            Use a scene graph as an imperfect guide to lead you to relevant regions to inspect.
+            Use a scene graph as an imperfect guide to lead you to relevant regions to inspect. However, be extra careful and check the 'history' to check the previous actions you have taken.
+            IMPORTANT: do not repeat past actions!! If you have already taken a action to goto a certain object, going to it again will give no new information, so avoid repeating Goto_object_node_step actions.
             Choose the object in a hierarchical manner by first reasoning about which room you should goto to best answer the question, and then choose the specific object. \n
-            Goto_frontier_node_step: If you think that using action "Goto_object_node_step" is not useful, in other words, if you think that going near any of the object nodes in the current scene graph will not provide you with any useful information to answer the question better, then choose this action.
-            This action will navigate you to a frontier (unexplored) region of the environment and will provide you information about new objects/rooms not yet in the scene graph. It will expand the scene graph. 
-            Choose this frontier based on the objects connected this frontier, in other words, Goto the frontier near which you see objects that are useful for answering the question or seem useful as a good exploration direction. Explain reasoning for choosing this frontier, by listing the list of objects (<id> and <name>) connected to this frontier node via a link (refer to scene graph) \n \
+            If the question explicitly asks to goto a different floor to answer the question try to look for stairs and go there.
+            Choose Goto_frontier_node_step action if you think that using action "Goto_object_node_step" is not useful, in other words, if you think that going near any of the object nodes in the current scene graph will not provide you with any further information to answer the question better.
+            This action will navigate you to a frontier (unexplored) region of the environment and will add breand new information about new objects/rooms to the scene graph. 
+            If you are in the wrong room and a relevant room is not yet in the scene graph, choose this action since you need to explore unseen areas.
+            Choose Goto_frontier_node_step based on the objects connected this frontier, in other words, Goto the frontier near which you see objects that are useful for answering the question or seem useful as a good exploration direction. Explain reasoning for choosing this frontier, by listing the list of objects (<id> and <name>) connected to this frontier node via a link (refer to scene graph) \n \
             
-            While choosing either of the above actions, play close attention to 'HISTORY' especially the previous 'Action's to see if you have taken the same action at previous timesteps. 
-            Avoid taking the same actions you have taken before.
             Describe the CURRENT IMAGE. Pay special attention to features that can help answer the question or select future actions.
             Describe the SCENE GRAPH. Pay special attention to features that can help answer the question or select future actions.
             '''
-        prompt += "You should go near the blue couch before answering the question with confidence. You should see a full image of the couch before answering with confidence"
         
         return prompt
 
     def get_current_state_prompt(self, scene_graph, agent_state):
-        # TODO(saumya): Include history
         prompt = f"At t = {self.t}: \n \
             CURRENT AGENT STATE: {agent_state}. \n \
             SCENE GRAPH: {scene_graph}. \n  "
@@ -300,9 +300,11 @@ class VLMPLannerOpenEQAGPT:
         if step.__class__.__name__ == 'Goto_object_node_step':
             target_pose = self.sg_sim.get_position_from_id(step.object_id.name)
             target_id = step.object_id.name
+            click.secho(f"Goto object node: {target_id} {step.object_id.value}",fg="green",)
         else:
             target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
             target_id = step.frontier_id.name
+            click.secho(f"Goto frontier node: {target_id}",fg="green",)
 
         if self._add_history:
             self.update_history(agent_state, step, answer, target_pose)

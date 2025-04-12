@@ -49,7 +49,10 @@ def extract_frames(output_directory):
     for folder in tqdm.tqdm(folders):
         files = sorted(folder.glob("*.pkl"))
         if len(files) > 0:
+            full_traj_pos = [[float(x) for x in pickle.load(file.open("rb"))['agent_state'].position] for file in files]
+             
             data = pickle.load(files[0].open("rb"))
+            
             quat = data['agent_state'].rotation
             w, x, y, z = quat.w, quat.x, quat.y, quat.z
 
@@ -65,11 +68,12 @@ def extract_frames(output_directory):
                 'init_pos': [float(x) for x in data['agent_state'].position],
                 'quat_wxyz': [quat.w, quat.x, quat.y, quat.z],
                 'init_angle': float(pitch),
+                'full_traj_pos': full_traj_pos,
             }
             idx += 1
 
     print(f"Saving file: {output_directory}")
-    with open(output_directory / "openeqa_init_poses.json", 'w') as file:
+    with open(output_directory / "openeqa_init_trajs.json", 'w') as file:
         json.dump(init_poses, file, indent=4)
 
 def main(args):

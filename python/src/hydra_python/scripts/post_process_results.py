@@ -83,6 +83,7 @@ if __name__ == "__main__":
     metrics['planning_steps_all_trajs'] = float(planning_steps_all_trajs)
     metrics['num_success'] = float(num_success)
     metrics['total_trajs'] = total_trajs
+    metrics['avg_traj_length'] = length_all_trajs / total_trajs
 
     print(f"Saving file: {outfile}")
     with open(outfile, 'w') as file:

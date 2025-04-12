@@ -7,6 +7,7 @@ import base64
 from openai import OpenAI
 from hydra_python.utils import get_instruction_from_eqa_data, get_latest_image
 from pydantic import BaseModel
+import click 
 
 # client = OpenAI(
 #     organization='org-9eg1dYLvm9Vnx13YZieDfE9n',
@@ -149,7 +150,7 @@ class VLMPLannerEQAGPT:
             Describe the CURRENT IMAGE. Pay special attention to features that can help answer the question or select future actions.
             Describe the SCENE GRAPH. Pay special attention to features that can help answer the question or select future actions.
             '''
-        prompt += "You should go near the blue couch before answering the question with confidence. You should see a full image of the couch before answering with confidence"
+        # prompt += "You should go near the blue couch before answering the question with confidence. You should see a full image of the couch before answering with confidence"
         prompt_no_image = f'''You are an excellent hierarchical graph planning agent. 
             Your goal is to navigate an unseen environment to confidently answer a multiple-choice question about the environment.
             As you explore the environment, your sensors are building a scene graph representation (in json format) and you have access to that scene graph.  
@@ -293,9 +294,11 @@ class VLMPLannerEQAGPT:
         if step.__class__.__name__ == 'Goto_object_node_step':
             target_pose = self.sg_sim.get_position_from_id(step.object_id.name)
             target_id = step.object_id.name
+            click.secho(f"Goto object node: {target_id} {step.object_id.value}",fg="green",)
         else:
             target_pose = self.sg_sim.get_position_from_id(step.frontier_id.name)
             target_id = step.frontier_id.name
+            click.secho(f"Goto frontier node: {target_id}",fg="green",)
 
         if self._add_history:
             self.update_history(agent_state, step, answer, target_pose)

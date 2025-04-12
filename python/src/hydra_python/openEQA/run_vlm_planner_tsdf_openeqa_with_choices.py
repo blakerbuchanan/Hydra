@@ -15,7 +15,7 @@ from hydra_python.frontier_mapping_eqa.tsdf import TSDFPlanner
 from hydra_python.frontier_mapping_eqa.utils import *
 from hydra_python.frontier_mapping_eqa.geom import *
 
-from hydra_python.utils import load_openeqa_data, initialize_hydra_pipeline, get_traj_len_from_poses, load_evaluation_prompt, check_if_multifloor
+from hydra_python.utils import load_openeqa_data, initialize_hydra_pipeline, get_instruction_from_eqa_data, get_traj_len_from_poses, check_if_multifloor
 from hydra_python.frontier_mapping_eqa.utils import pos_habitat_to_normal
 import torch
 
@@ -44,7 +44,7 @@ def should_skip_experiment(experiment_id, filename='experiment_status.json'):
     return experiment_id in [k.split('_')[1] for k in data.keys()]
 
 def main(cfg):
-    questions_data, init_pose_data = load_openeqa_data(cfg.data)
+    questions_data, init_pose_data, choices_data = load_openeqa_data(cfg.data)
 
     output_path = cfg.output_path
     os.makedirs(cfg.output_path, exist_ok=True)
@@ -58,16 +58,20 @@ def main(cfg):
     else:
         segmenter = None
     
-    evaluation_prompt = load_evaluation_prompt(cfg.data.evaluation_prompt_file)
+    # evaluation_prompt = load_evaluation_prompt(cfg.data.evaluation_prompt_file)
 
     successes = 0
     for question_ind in tqdm(range(len(questions_data))):
-        # if question_ind not in [15]:
-        #     continue
+        # if question_ind not in [25, 29, 33, 34, 38, 45, 49, 52, 57, 59, 63, 76, 81, 82, 88, 100, 104, 106, 107]:
+        if question_ind not in [52, 63, 76, 79, 100]:
+            continue
         question_data = questions_data[question_ind]
+        question_id = question_data["question_id"]
+        scene = init_pose_data[question_data['episode_history']]["scene_id"]
+        choices = choices_data[question_id]['choices']
 
-        answer = question_data["answer"]
-        experiment_id = f'{question_ind}_{question_data["question_id"]}'
+        answer = choices_data[question_id]["answer_id"]
+        experiment_id = f'{question_ind}_{question_id}'
 
         if should_skip_experiment(question_data["question_id"], filename=results_filename):
             click.secho(f'Skipping==Index: {question_ind} Scene: {question_data["question_id"]}=======',fg="yellow",)
@@ -77,7 +81,7 @@ def main(cfg):
 
         # Planner reset with the new quesion
         question_path = hydra.resolve_output_path(output_path / experiment_id)
-        scene_name = f'{cfg.data.scene_data_path}/{question_data["scene"]}/{question_data["scene"][6:]}.basis.glb'
+        scene_name = f'{cfg.data.scene_data_path}/{scene}'
                 
         habitat_data = habitat.HabitatInterface(
             scene_name, 
@@ -107,8 +111,6 @@ def main(cfg):
             rr_logger=rr_logger,
         )
 
-        label = question_data["enrich_labels"] if "enrich_labels" in question_data else ' '
-
         sg_sim = hydra.SceneGraphSim(
             cfg, 
             question_path, 
@@ -116,7 +118,7 @@ def main(cfg):
             rr_logger, 
             device=device, 
             clean_ques_ans=question_data["question"],
-            enrich_object_labels=label)
+            enrich_object_labels=choices_data[question_id]['enrich_labels'])
 
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
@@ -133,13 +135,26 @@ def main(cfg):
             segmenter=segmenter,
         )
 
-        vlm_planner = hydra.VLMPLannerOpenEQAGPT(
-            cfg.vlm,
-            sg_sim,
-            question_data["question"], 
-            answer, 
-            question_path,
-            evaluation_prompt)
+        if 'gpt' in cfg.vlm.name.lower():
+            vlm_planner = hydra.VLMPLannerEQAGPT(
+                cfg.vlm,
+                sg_sim,
+                question_data["question"], 
+                ["A", "B", "C", "D"], 
+                choices, 
+                answer, 
+                question_path)
+        elif 'gemini' in cfg.vlm.name.lower():
+            vlm_planner = hydra.VLMPLannerEQAGemini(
+                cfg.vlm,
+                sg_sim,
+                question_data["question"], 
+                ["A", "B", "C", "D"], 
+                choices, 
+                answer, 
+                question_path)
+        else:
+            raise NotImplementedError('VLM planner not implemented.')
 
         # LOG NAVMESH
         graph_nodes = np.array([habitat_data.G.nodes[n]["pos"].flatten() for n in habitat_data.G])
@@ -152,7 +167,7 @@ def main(cfg):
         click.secho(f'Index:{question_ind} Scene: {question_data["question_id"]}',fg="green",)
         click.secho(f"Question:\n{vlm_planner._question} \n Answer: {answer}",fg="green",)
 
-        num_steps = 20
+        num_steps = 30
         succ = False
         planning_steps = 0
         traj_length = 0.
@@ -161,9 +176,8 @@ def main(cfg):
             target_pose, target_id, is_confident, confidence_level, answer_output = vlm_planner.get_next_action()
             click.secho(f"VLM planning time for overall step {cnt_step} and vlm step {planning_steps} is {time.time()-start}",fg="green",)
             
-            extra_answers = question_data["extra_answers"] if "extra_answers" in question_data else None
-            succ, eval_score, eval_perc = vlm_planner.evaluate_answer(question_data["question"], answer, answer_output, extra_answers)
             if is_confident or (confidence_level>0.85):
+                succ = (answer == answer_output)
                 if succ:
                     successes += 1
                     result = f"Success at vlm step{planning_steps} for {experiment_id}"
@@ -231,11 +245,11 @@ def main(cfg):
             'is_confident': is_confident,
             'confidence_level': confidence_level,
             'traj_length': traj_length,
-            'eval_score': eval_score,
-            'eval_perc': eval_perc,
             'category': question_data["category"],
             'question': question_data["question"],
             'answer': question_data["answer"],
+            'answer_id': answer,
+            'choices': choices,
             'answer_output': answer_output,
             'is_multifloor': is_multifloor,
         }

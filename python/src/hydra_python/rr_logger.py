@@ -122,8 +122,8 @@ class RRLogger:
         rr.log(f"world/robot_traj", rr.LineStrips3D(agent_positions, colors=[0, 0, 255]))
         rr.log(f"world/robot_pos", rr.Points3D(agent_positions[-1], colors=[0, 0, 255], radii=0.11))
 
-    def log_traj_data(self, agent_positions):
-        rr.log("world/desired_traj", rr.LineStrips3D(agent_positions, colors=[0, 255, 255]))
+    def log_traj_data(self, agent_positions, name='desired_traj'):
+        rr.log(f"world/{name}", rr.LineStrips3D(agent_positions, colors=[0, 255, 255]))
     
     def log_agent_tf(self, pos, quat):
         translation = np.asarray([pos[0], pos[1], pos[2]])
@@ -158,13 +158,34 @@ class RRLogger:
                 media_type=rr.MediaType.TEXT,
             ),
         )
+    
+    def unique_with_tolerance_dbscan(arr, tol):
+        from sklearn.cluster import DBSCAN
+        arr = np.sort(arr)  # Sorting helps in interpretation
+        arr = arr.reshape(-1, 1)  # Reshape for DBSCAN (expects 2D input)
+
+        clustering = DBSCAN(eps=tol, min_samples=1).fit(arr)
+        unique_vals = [np.mean(arr[clustering.labels_ == i]) for i in set(clustering.labels_)]
+        
+        return np.array(unique_vals)
 
     def log_navmesh_data(self, navmesh):
-        # log the frontier nodes with color red
-        rr.log(
-            f"world/navmesh_nodes",
-            rr.Points3D(navmesh, colors=[255,255,255], radii=0.11)
+        from sklearn.cluster import DBSCAN
+        import distinctipy
+        floor_heights = navmesh[:,2].reshape(-1, 1)
+        clustering = DBSCAN(eps=0.5, min_samples=1).fit(floor_heights)
+        cluster_idxs = set(clustering.labels_)
+        cluster_nodes = [np.mean(navmesh[clustering.labels_ == i]) for i in cluster_idxs]
+
+        colors = distinctipy.get_colors(
+            max(cluster_idxs)+1, pastel_factor=0.5, rng=1234
         )
+        colors = (255 * np.array(colors)).astype(np.uint8)
+        for i in cluster_idxs:
+            rr.log(
+                f"world/navmesh_nodes_{i}",
+                rr.Points3D(navmesh[clustering.labels_ == i], colors=colors[i], radii=0.11)
+            )
 
     def log_frontier_data(self, frontier_node_positions):
         # log the frontier nodes with color red
