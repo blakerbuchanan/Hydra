@@ -45,7 +45,8 @@ from hydra_python.dataset_logger import *
 from hydra_python.vlm_planner import *
 from hydra_python.vlm_planner_eqa_gpt import VLMPLannerEQAGPT
 from hydra_python.openEQA.vlm_planner_openeqa_gpt import VLMPLannerOpenEQAGPT
-from hydra_python.vlm_planner_eqa_gemini import VLMPLannerEQAGemini
+from hydra_python.vlm_planner_eqa_gemini import VLMPlannerEQAGemini
+from hydra_python.vlm_planner_openeqa_llama import VLMPlannerOpenEQALlama4
 from hydra_python.vlm_planner_eqa_gemini_sayplan import VLMPLannerEQAGeminiSayPlan
 from hydra_python.scene_graph_sim import *
 from hydra_python.rr_logger import *

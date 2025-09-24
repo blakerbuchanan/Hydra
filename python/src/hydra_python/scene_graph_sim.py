@@ -55,7 +55,8 @@ class SceneGraphSim:
         self._sg_path = output_path / "filtered_dsg.json"
         self.pipeline = pipeline
         self._room_names = []
-
+        self._frontier_node_ids = []
+        
         os.makedirs(self._detector_path, exist_ok=True)
         
         self.rr_logger = rr_logger

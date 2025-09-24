@@ -63,8 +63,8 @@ def main(cfg):
     successes = 0
     for question_ind in tqdm(range(len(questions_data))):
         # if question_ind not in [25, 29, 33, 34, 38, 45, 49, 52, 57, 59, 63, 76, 81, 82, 88, 100, 104, 106, 107]:
-        if question_ind not in [52, 63, 76, 79, 100]:
-            continue
+        # if question_ind not in [52, 63, 76, 79, 100]:
+        #     continue
         question_data = questions_data[question_ind]
         question_id = question_data["question_id"]
         scene = init_pose_data[question_data['episode_history']]["scene_id"]
@@ -72,6 +72,12 @@ def main(cfg):
 
         answer = choices_data[question_id]["answer_id"]
         experiment_id = f'{question_ind}_{question_id}'
+
+        # if question_ind not in [13] and 'gemini' in cfg.vlm.name.lower():
+        #     continue
+
+        if question_ind in [18] and 'llama' in cfg.vlm.name.lower():
+            continue
 
         if should_skip_experiment(question_data["question_id"], filename=results_filename):
             click.secho(f'Skipping==Index: {question_ind} Scene: {question_data["question_id"]}=======',fg="yellow",)
@@ -123,18 +129,32 @@ def main(cfg):
         # Get poses for hydra at init view
         poses = habitat_data.get_init_poses_eqa(init_pts, init_angle, cfg.habitat.camera_tilt_deg)
         # Get scene graph for init view
-        run_eqa(
-            pipeline,
-            habitat_data,
-            poses,
-            output_path=question_path,
-            rr_logger=rr_logger,
-            tsdf_planner=tsdf_planner,
-            sg_sim=sg_sim,
-            save_image=cfg.vlm.use_image,
-            segmenter=segmenter,
-        )
+        # while len(sg_sim.frontier_node_ids) == 0:
+        #     import ipdb; ipdb.set_trace()
+        #     run_eqa(
+        #         pipeline,
+        #         habitat_data,
+        #         poses,
+        #         output_path=question_path,
+        #         rr_logger=rr_logger,
+        #         tsdf_planner=tsdf_planner,
+        #         sg_sim=sg_sim,
+        #         save_image=cfg.vlm.use_image,
+        #         segmenter=segmenter,
+        #     )
 
+        run_eqa(
+                pipeline,
+                habitat_data,
+                poses,
+                output_path=question_path,
+                rr_logger=rr_logger,
+                tsdf_planner=tsdf_planner,
+                sg_sim=sg_sim,
+                save_image=cfg.vlm.use_image,
+                segmenter=segmenter,
+            )
+        
         if 'gpt' in cfg.vlm.name.lower():
             vlm_planner = hydra.VLMPLannerEQAGPT(
                 cfg.vlm,
@@ -145,7 +165,16 @@ def main(cfg):
                 answer, 
                 question_path)
         elif 'gemini' in cfg.vlm.name.lower():
-            vlm_planner = hydra.VLMPLannerEQAGemini(
+            vlm_planner = hydra.VLMPlannerEQAGemini(
+                cfg.vlm,
+                sg_sim,
+                question_data["question"], 
+                ["A", "B", "C", "D"], 
+                choices, 
+                answer, 
+                question_path)
+        elif 'llama' in cfg.vlm.name.lower():
+            vlm_planner = hydra.VLMPlannerOpenEQALlama4(
                 cfg.vlm,
                 sg_sim,
                 question_data["question"], 

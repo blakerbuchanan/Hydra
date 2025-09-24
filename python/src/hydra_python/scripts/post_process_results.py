@@ -7,13 +7,12 @@ if __name__ == "__main__":
     # filepath2 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view/'
     # filepath1 = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view_traj_len/'
 
-    cfg_path = "/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_eqa_strange.yaml"
+    cfg_path = "/home/saumyas/catkin_ws_semnav/src/hydra/python/src/hydra_python/commands/cfg/vlm_openeqa_strange.yaml"
     cfg = OmegaConf.load(cfg_path)
     OmegaConf.resolve(cfg)
 
     questions_data, init_pose_data = load_eqa_data(cfg.data)
-
-    filepath = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/explore_eqa_gpt-4o-2024-08-06_heirar_view/'
+    filepath = '/home/saumyas/catkin_ws_semnav/src/hydra/outputs/openEQA_gpt-4o-2024-08-06_grapheqa_single_floor_with_choices/'
     outfile = filepath + 'metrics_new_succ.json'
     outfile2 = filepath + 'task_categories.json'
 
